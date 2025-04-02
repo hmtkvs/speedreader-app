@@ -60,21 +60,37 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
   const extractTextWithoutPdfJs = async (file: File): Promise<string> => {
     try {
       console.log('Using text extraction fallback method...');
-      // For simplicity, we'll just read the PDF as text
-      // This might not give perfect results but is better than nothing
-      const text = await file.text();
       
-      // Clean the text - remove binary characters that might appear
-      const cleanedText = text.replace(/[^\x20-\x7E\n\r\t]/g, ' ').trim();
+      // Show more descriptive notification about the fallback method
+      setNotification({
+        type: 'warning',
+        message: 'PDF extraction is limited. Some formatting may be lost.'
+      });
       
-      if (cleanedText.length < 50) {
-        throw new Error('Could not extract meaningful text from the PDF');
-      }
+      // Instead of trying to read binary PDF as text, 
+      // create a message explaining the situation
+      const fileName = file.name;
+      const fileSize = (file.size / 1024).toFixed(2) + ' KB';
       
-      return cleanedText;
+      return `
+This PDF document (${fileName}, ${fileSize}) could not be fully processed due to compatibility issues.
+
+Key information:
+- The PDF may be using advanced features or encoding
+- It may contain scanned images rather than text
+- It could be protected or using uncommon formatting
+
+Try with a different PDF file or convert this document to a more compatible format.
+
+[PDF Processing Information]
+File: ${fileName}
+Size: ${fileSize}
+Type: ${file.type}
+Last Modified: ${new Date(file.lastModified).toLocaleString()}
+`;
     } catch (error) {
       console.error('Fallback text extraction failed:', error);
-      throw new Error('Both primary and fallback PDF processing methods failed');
+      throw new Error('Failed to process this PDF document');
     }
   };
 
@@ -125,6 +141,12 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
             // Clear timeouts if successful
             clearTimeout(progressTimeout1);
             clearTimeout(progressTimeout2);
+            
+            // Check if the parsed text is actually PDF structure data
+            if (text.startsWith('%PDF-') || text.includes('endobj') || text.includes('startxref')) {
+              console.error('PDF parsing returned raw PDF data instead of extracted text');
+              throw new Error('PDF parsing returned raw PDF structure');
+            }
             
             setUploadProgress(90);
           } catch (pdfJsError) {

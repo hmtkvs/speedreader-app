@@ -11,6 +11,41 @@ interface PDFParseOptions {
   timeout?: number;
 }
 
+// Helper to check if text appears to be PDF structure data rather than actual content
+const isPDFStructureData = (text: string): boolean => {
+  // Check for typical PDF structure markers
+  const pdfMarkers = [
+    '%PDF-',        // PDF header
+    'endobj',       // Object end marker
+    'startxref',    // Cross-reference table
+    '<<',           // Dictionary start
+    '>>',           // Dictionary end
+    '/Filter',      // Common filter indicator
+    '/FlateDecode', // Common compression method
+    '/Length',      // Length indicator
+    'stream',       // Stream marker
+    'endstream'     // End stream marker
+  ];
+  
+  const markerCount = pdfMarkers.filter(marker => text.includes(marker)).length;
+  
+  // If we find multiple PDF structure markers, it's likely raw PDF data
+  if (markerCount >= 3) {
+    return true;
+  }
+  
+  // Check for high concentration of non-readable characters
+  const nonReadableChars = text.replace(/[a-zA-Z0-9 \n\r\t.,;:?!()[\]{}\-_+='"]/g, '');
+  const nonReadableRatio = nonReadableChars.length / text.length;
+  
+  // If more than 30% of characters are non-readable, it's likely binary data
+  if (nonReadableRatio > 0.3) {
+    return true;
+  }
+  
+  return false;
+};
+
 // Configure the worker - use direct path for better reliability
 let workerLoaded = false;
 const loadWorker = () => {
@@ -87,7 +122,8 @@ export async function parsePDF(
         disableRange: true
       }).promise;
       console.log('PDF document loading promise created successfully');
-    } catch (loadError) {
+    } catch (error) {
+      const loadError = error as Error;
       console.error('PDF loading error:', loadError);
       throw new PDFParsingError(`Failed to initialize PDF document: ${loadError.message || 'Unknown error'}`);
     }
@@ -173,6 +209,11 @@ export async function parsePDF(
     // Check if we got any text
     if (!fullText.trim()) {
       throw new PDFParsingError('Could not extract any text from the PDF. The document might be scanned or image-based.');
+    }
+
+    // Check if the extracted text seems to be PDF structure data
+    if (isPDFStructureData(fullText)) {
+      throw new PDFParsingError('Failed to properly extract text content. The document appears to be using unsupported encoding or contains mostly images.');
     }
 
     console.log(`Successfully extracted ${fullText.length} characters from PDF`);
