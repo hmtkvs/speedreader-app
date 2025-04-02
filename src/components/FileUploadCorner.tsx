@@ -26,6 +26,24 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
   } | null>(null);
   const [recentFiles, setRecentFiles] = useState<FileRecord[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [timeoutIds, setTimeoutIds] = useState<number[]>([]);
+
+  // Helper to clear all timeouts
+  const clearAllTimeouts = () => {
+    timeoutIds.forEach(id => clearTimeout(id));
+    setTimeoutIds([]);
+  };
+
+  // Helper to add and track a timeout
+  const addTimeout = (callback: () => void, delay: number) => {
+    const id = window.setTimeout(() => {
+      callback();
+      // Remove this timeout ID from the list
+      setTimeoutIds(prev => prev.filter(timeoutId => timeoutId !== id));
+    }, delay);
+    setTimeoutIds(prev => [...prev, id]);
+    return id;
+  };
 
   const validateFile = (file: File): boolean => {
     const allowedTypes = ['application/pdf', 'text/plain'];
@@ -67,8 +85,23 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
         message: 'PDF extraction is limited. Some formatting may be lost.'
       });
       
-      // Instead of trying to read binary PDF as text, 
-      // create a message explaining the situation
+      // Try to do a simple read of the file - might work for some basic PDFs
+      try {
+        const text = await file.text();
+        // Clean the text and check if it has readable content
+        const cleanedText = text.replace(/[^\x20-\x7E\n\r\t]/g, ' ').trim();
+        
+        // If we got meaningful text that's not just PDF markers, return it
+        if (cleanedText.length > 200 && 
+            !cleanedText.includes('%PDF-') && 
+            !cleanedText.includes('endobj')) {
+          return cleanedText;
+        }
+      } catch (readError) {
+        console.log('Simple read failed, using fallback message', readError);
+      }
+      
+      // If simple read fails, create a message explaining the situation
       const fileName = file.name;
       const fileSize = (file.size / 1024).toFixed(2) + ' KB';
       
@@ -102,6 +135,7 @@ Last Modified: ${new Date(file.lastModified).toLocaleString()}
 
     try {
       setIsProcessing(true);
+      clearAllTimeouts(); // Clear any existing timeouts
       
       if (!validateFile(file)) {
         setCurrentFile(null);
@@ -125,52 +159,53 @@ Last Modified: ${new Date(file.lastModified).toLocaleString()}
         // Parse PDF with progress updates
         setUploadProgress(10);
         
+        // Add intermediate progress updates to give feedback to the user
+        addTimeout(() => setUploadProgress(30), 1000);
+        addTimeout(() => setUploadProgress(50), 3000);
+        addTimeout(() => setUploadProgress(60), 5000);
+        
+        // Show processing notifications if it's taking a while
+        addTimeout(() => {
+          setNotification({
+            type: 'warning',
+            message: 'Still working on processing your PDF... This might take a moment.'
+          });
+        }, 3000);
+        
+        addTimeout(() => {
+          setNotification({
+            type: 'warning',
+            message: 'PDF processing is taking longer than expected. Complex documents may require more time.'
+          });
+        }, 7000);
+        
         try {
-          // Add intermediate progress updates to give feedback to the user
-          const progressTimeout1 = setTimeout(() => {
-            setUploadProgress(prev => prev === 10 ? 30 : prev);
-          }, 1000);
-          
-          const progressTimeout2 = setTimeout(() => {
-            setUploadProgress(prev => prev === 30 ? 50 : prev);
-          }, 2000);
-          
           // Try parsing with PDF.js
-          try {
-            text = await parsePDF(file);
-            // Clear timeouts if successful
-            clearTimeout(progressTimeout1);
-            clearTimeout(progressTimeout2);
-            
-            // Check if the parsed text is actually PDF structure data
-            if (text.startsWith('%PDF-') || text.includes('endobj') || text.includes('startxref')) {
-              console.error('PDF parsing returned raw PDF data instead of extracted text');
-              throw new Error('PDF parsing returned raw PDF structure');
-            }
-            
-            setUploadProgress(90);
-          } catch (pdfJsError) {
-            // Clear timeouts on error
-            clearTimeout(progressTimeout1);
-            clearTimeout(progressTimeout2);
-            
-            console.error('Primary PDF parsing failed, trying fallback method:', pdfJsError);
-            
-            // Let the user know we're using a fallback method
-            setNotification({
-              type: 'warning',
-              message: 'PDF processing issues detected, using fallback method...'
-            });
-            
-            setUploadProgress(60);
-            
-            // Try fallback method
-            text = await extractTextWithoutPdfJs(file);
-            setUploadProgress(90);
+          text = await parsePDF(file);
+          clearAllTimeouts();
+          
+          // Check if the parsed text is actually PDF structure data
+          if (text.startsWith('%PDF-') || text.includes('endobj') || text.includes('startxref')) {
+            console.error('PDF parsing returned raw PDF data instead of extracted text');
+            throw new Error('PDF parsing returned raw PDF structure');
           }
-        } catch (finalError) {
-          console.error('All PDF parsing methods failed:', finalError);
-          throw new Error('Unable to process this PDF file. It might be corrupted or incompatible.');
+          
+          setUploadProgress(90);
+        } catch (pdfJsError) {
+          clearAllTimeouts();
+          console.error('Primary PDF parsing failed, trying fallback method:', pdfJsError);
+          
+          // Let the user know we're using a fallback method
+          setNotification({
+            type: 'warning',
+            message: 'PDF processing issues detected, using fallback method...'
+          });
+          
+          setUploadProgress(60);
+          
+          // Try fallback method
+          text = await extractTextWithoutPdfJs(file);
+          setUploadProgress(90);
         }
       } else {
         // Handle as text file
@@ -237,6 +272,7 @@ Last Modified: ${new Date(file.lastModified).toLocaleString()}
 
     } catch (error) {
       console.error('Error processing file:', error);
+      clearAllTimeouts();
       
       let errorMessage = 'Failed to process file';
       if (error instanceof Error) {

@@ -1,0 +1,292 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Your rule content
+
+- You can @ files here
+- You can use markdown but dont have to
+# Development Conventions
+
+This document outlines the coding conventions and best practices for the Speed Reader application.
+
+## File Naming Conventions
+
+### Components
+- Use **PascalCase** for React component files
+- Example: `SpeedReader.tsx`, `PDFViewer.tsx`
+- Include the component's primary function in the name
+
+### Hooks
+- Prefix with **use** followed by camelCase
+- Example: `useReaderSettings.ts`, `usePDFProcessor.ts`
+
+### Utility Functions
+- Use **camelCase** for utility files
+- Example: `formatDateTime.ts`, `calculateReadingTime.ts`
+
+### Types and Interfaces
+- Use **PascalCase** for type definitions
+- Suffix with **.types.ts** for dedicated type files
+- Example: `Reader.types.ts`, `Subscription.types.ts`
+
+### Test Files
+- Match source filename with **.test.ts** or **.spec.ts** suffix
+- Example: `SpeedReader.test.tsx`, `calculateReadingTime.spec.ts`
+
+### CSS/SCSS Modules
+- Match component name with **.module.css/scss** suffix
+- Example: `SpeedReader.module.scss`
+
+## Component Structure
+
+### Functional Components
+
+```typescript
+import React from 'react';
+import type { ComponentProps } from './Component.types';
+
+/**
+ * Component description
+ */
+export function ComponentName({ prop1, prop2 }: ComponentProps): React.ReactElement {
+  // Hook calls first
+  const [state, setState] = useState(initialState);
+  
+  // Side effects next
+  useEffect(() => {
+    // Effect code
+  }, [dependencies]);
+  
+  // Event handlers
+  const handleEvent = () => {
+    // Handler code
+  };
+  
+  // Derived/computed values
+  const derivedValue = useMemo(() => {
+    // Computation logic
+    return result;
+  }, [dependencies]);
+  
+  // Render
+  return (
+    <div>
+      {/* JSX content */}
+    </div>
+  );
+}
+```
+
+### Custom Hooks
+
+```typescript
+/**
+ * Hook description
+ */
+export function useCustomHook(param1: Type, param2: Type): ReturnType {
+  // State and other hooks
+  
+  // Side effects
+  
+  // Return values or functions
+  return {
+    value1,
+    value2,
+    handleSomething
+  };
+}
+```
+
+## Module Organization
+
+### Exports
+- Use explicit named exports when possible
+- Create barrel files (index.ts) to expose public API
+
+```typescript
+// features/reader/index.ts - Barrel file
+export { SpeedReader } from './components/SpeedReader';
+export { useReaderSettings } from './hooks/useReaderSettings'; 
+export type { ReaderSettings } from './types';
+
+// Avoid exporting implementation details:
+// export { calculateOptimalFontSize }; // Don't export internal utilities
+```
+
+### Imports
+- Group imports in this order:
+  1. React and framework imports
+  2. Third-party libraries
+  3. Application imports (use absolute paths)
+  4. Relative imports
+  5. Assets/styles
+
+```typescript
+// React and framework imports
+import React, { useState, useEffect } from 'react';
+
+// Third-party libraries
+import { motion } from 'framer-motion';
+import { IoDocumentText } from 'react-icons/io5';
+
+// Application imports (absolute paths)
+import { env } from '@/config/env';
+import { ErrorHandler } from '@/core/errors';
+
+// Relative imports
+import { useReaderSettings } from '../hooks/useReaderSettings';
+import type { PDFViewerProps } from './PDFViewer.types';
+
+// Assets/styles
+import './PDFViewer.styles.scss';
+```
+
+## Type Safety
+
+### Interfaces vs Types
+- Use **interfaces** for object shapes that may be extended
+- Use **type** for unions, intersections, and concrete types
+- Prefer explicit typing over inference for function parameters and returns
+
+```typescript
+// Interface for extendable shapes
+interface BaseUser {
+  id: string;
+  name: string;
+}
+
+// Extended interface
+interface AdminUser extends BaseUser {
+  permissions: string[];
+}
+
+// Union type
+type UserRole = 'admin' | 'editor' | 'viewer';
+
+// Type for specific structure
+type APIResponse<T> = {
+  data: T;
+  meta: {
+    page: number;
+    total: number;
+  }
+};
+```
+
+### Type Guards
+
+```typescript
+function isAdminUser(user: BaseUser): user is AdminUser {
+  return 'permissions' in user;
+}
+```
+
+## State Management
+
+### Local State
+- Use `useState` for component-specific state
+- Use `useReducer` for complex state logic
+
+### Application State
+- Use React Context for state shared across components in a feature
+- Use Zustand or similar for global application state
+
+```typescript
+// Example Context
+export const ReaderContext = createContext<ReaderContextValue | undefined>(undefined);
+
+export function ReaderProvider({ children }: { children: React.ReactNode }) {
+  const [settings, setSettings] = useState<ReaderSettings>(defaultSettings);
+  
+  return (
+    <ReaderContext.Provider value={{ settings, setSettings }}>
+      {children}
+    </ReaderContext.Provider>
+  );
+}
+```
+
+## Error Handling
+
+### Try/Catch Pattern
+- Use try/catch for handling asynchronous errors
+- Centralize error transformation in the error handler
+
+```typescript
+async function fetchData() {
+  try {
+    const response = await api.get('/endpoint');
+    return response.data;
+  } catch (error) {
+    ErrorHandler.getInstance().handleError(error, { context: 'fetchData' });
+    throw new AppError('Failed to fetch data');
+  }
+}
+```
+
+### Error Boundaries
+- Use React Error Boundaries for UI error handling
+- Create specialized error components for different features
+
+## Testing
+
+### Unit Tests
+- Test one unit of functionality at a time
+- Use mocks for dependencies
+- Follow the AAA pattern (Arrange, Act, Assert)
+
+```typescript
+describe('calculateReadingTime', () => {
+  it('should calculate correct reading time for given words and speed', () => {
+    // Arrange
+    const text = 'This is a test string with ten words in it';
+    const wpm = 300;
+    
+    // Act
+    const result = calculateReadingTime(text, wpm);
+    
+    // Assert
+    expect(result).toBe(2); // 10 words at 300wpm = 2 seconds
+  });
+});
+```
+
+### Integration Tests
+- Focus on interactions between components
+- Use test providers for context and state
+
+### E2E Tests
+- Test complete user flows
+- Minimize dependencies on implementation details
+
+## Documentation
+
+### Code Documentation
+- Use JSDoc comments for functions, components, and types
+- Document non-obvious behavior and edge cases
+
+```typescript
+/**
+ * Calculates the optimal reading position within a word.
+ * 
+ * The algorithm uses the following rules:
+ * - For words of 1-4 characters: highlight the first character
+ * - For words of 5-9 characters: highlight the second character
+ * - For words of 10+ characters: highlight the third character
+ * 
+ * @param word - The word to analyze
+ * @returns The index of the character to highlight
+ */
+function getOptimalReadingPosition(word: string): number {
+  if (word.length <= 4) return 0;
+  if (word.length <= 9) return 1;
+  return 2;
+}
+```
+
+### API Documentation
+- Document all API endpoints with parameters, responses, and examples
+- Use OpenAPI/Swagger for REST APIs

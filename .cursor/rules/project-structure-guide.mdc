@@ -1,0 +1,366 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+
+# Your rule content
+
+- You can @ files here
+- You can use markdown but dont have to
+# Project Structure Guide
+
+## Overview
+
+This document explains the project structure of the Speed Reader application, focusing on how it implements clean architecture principles and domain-driven design.
+
+## Core Principles
+
+Our architecture is built on several core principles:
+
+1. **Separation of Concerns**: Each module has a single responsibility
+2. **Dependency Rule**: Dependencies point inward, with outer layers depending on inner layers
+3. **Feature-First Organization**: Code is organized around features rather than technical types
+4. **Domain-Driven Design**: Business logic is captured in the domain model
+5. **Dependency Injection**: Dependencies are provided rather than created
+
+## Architectural Layers
+
+The application is divided into the following layers, from innermost to outermost:
+
+### 1. Domain Layer (`src/core/domain`)
+
+The domain layer contains business entities, value objects, and business rules that are not dependent on any framework or external system.
+
+Key components:
+- **Entities**: Business objects with identity (Reader, PDF, Subscription)
+- **Value Objects**: Immutable objects without identity (Color Scheme, Reading Settings)
+- **Domain Services**: Pure business logic that operates on multiple entities
+- **Domain Events**: Events that occur within the domain
+
+### 2. Application Layer (`src/core/services`)
+
+The application layer orchestrates the flow of data and coordinates domain objects. It:
+- Implements use cases
+- Transforms domain objects to DTOs if needed
+- Manages transactions
+- Contains no business rules
+
+### 3. Infrastructure Layer (`src/infrastructure`, `src/api`)
+
+This layer provides implementations for interfaces defined in the inner layers:
+- Database access
+- External API clients
+- Storage implementations
+- Monitoring and analytics
+
+### 4. Presentation Layer (`src/features`)
+
+The user interface layer, responsible for:
+- Rendering the UI
+- Managing UI state
+- Handling user input
+- Communicating with the application layer
+
+## Feature Organization
+
+Each feature in `/src/features` follows a consistent internal structure:
+
+```
+feature-name/
+├── components/     # UI components for this feature
+├── hooks/          # React hooks specific to this feature
+├── services/       # Feature-specific services
+├── utils/          # Feature-specific utilities
+└── index.ts        # Public API for the feature
+```
+
+Benefits of this organization:
+- **Encapsulation**: Features expose only what's needed through their index.ts
+- **Cohesion**: Related code stays together
+- **Isolation**: Features can be developed independently
+- **Testability**: Each feature can be tested in isolation
+
+## Dependency Flow
+
+The dependency flow in the application follows the dependency rule of clean architecture:
+
+```
+UI Components → Hooks → Application Services → Domain Model
+     ↓              ↓             ↓
+   Feature-specific components, hooks, and services
+     ↓              ↓             ↓
+Shared UI components and utilities
+```
+
+## Directory Structure Example
+
+```
+src/
+├── features/reader/
+│   ├── components/
+│   │   ├── SpeedReader.tsx        # Main reader component
+│   │   ├── ReadingControls.tsx    # Controls for reading
+│   │   └── WordDisplay.tsx        # Word display component
+│   ├── hooks/
+│   │   ├── useReaderControls.ts   # Hook for reader controls
+│   │   └── useWordHighlighting.ts # Hook for word highlighting
+│   ├── services/
+│   │   └── readerService.ts       # Feature-specific service
+│   ├── utils/
+│   │   └── textParser.ts          # Text parsing utility
+│   └── index.ts                   # Public API
+├── core/domain/
+│   ├── models/
+│   │   └── reader.ts              # Reader domain model
+│   └── types.ts                   # Domain types
+```
+
+## Adding New Features
+
+To add a new feature:
+
+1. Create a new directory in `src/features`
+2. Add the necessary components, hooks, services, and utils
+3. Create an index.ts file to export the public API
+4. Use the feature in the application by importing from the feature's index
+
+Example:
+
+```typescript
+// src/features/new-feature/index.ts
+export { NewFeatureComponent } from './components/NewFeatureComponent';
+export { useNewFeature } from './hooks/useNewFeature';
+
+// Using the feature elsewhere
+import { NewFeatureComponent } from '@/features/new-feature';
+```
+
+## Accessing Shared Resources
+
+Shared resources, such as UI components and utilities, are accessed via absolute imports:
+
+```typescript
+// Importing a shared component
+import { Button } from '@/shared/components/ui/Button';
+
+// Importing a utility function
+import { formatDate } from '@/shared/utils/formatters';
+```
+
+## Configuration Management
+
+Application configuration is centralized in the `src/config` directory:
+
+```typescript
+// Using configuration
+import { env } from '@/config/env';
+
+// Check if a feature is enabled
+if (env.features.enableTTS) {
+  // Implement TTS functionality
+}
+```
+
+## Error Handling
+
+Centralized error handling is implemented in `src/core/errors`:
+
+```typescript
+// Using error handling
+import { ErrorHandler } from '@/core/errors';
+
+try {
+  // Risky operation
+} catch (error) {
+  ErrorHandler.getInstance().handleError(error, { context: 'function name' });
+}
+```
+
+## Testing Strategy
+
+Tests are organized in the `tests` directory, mirroring the structure of the source code:
+
+```
+tests/
+├── unit/                       # Unit tests
+│   ├── features/
+│   │   └── reader/             # Tests for reader feature
+│   ├── core/                   # Tests for core logic
+│   └── shared/                 # Tests for shared code
+├── integration/                # Integration tests
+└── e2e/                        # End-to-end tests
+```
+
+## Examples
+
+### Domain Model Example
+
+```typescript
+// src/core/domain/models/reader.ts
+export class Reader {
+  private text: string = '';
+  private currentPosition: number = 0;
+  private speed: number = 300; // words per minute
+  
+  constructor(private readonly name: string) {}
+  
+  public setText(text: string): void {
+    this.text = text;
+    this.currentPosition = 0;
+  }
+  
+  public getCurrentWord(): string {
+    const words = this.text.split(/\s+/);
+    return words[this.currentPosition] || '';
+  }
+  
+  public moveNext(): boolean {
+    const words = this.text.split(/\s+/);
+    if (this.currentPosition < words.length - 1) {
+      this.currentPosition++;
+      return true;
+    }
+    return false;
+  }
+  
+  public setSpeed(wordsPerMinute: number): void {
+    if (wordsPerMinute < 100 || wordsPerMinute > 1000) {
+      throw new Error('Reading speed must be between 100 and 1000 WPM');
+    }
+    this.speed = wordsPerMinute;
+  }
+  
+  public getReadingTimeRemaining(): number {
+    const words = this.text.split(/\s+/);
+    const wordsRemaining = words.length - this.currentPosition;
+    return wordsRemaining / this.speed * 60; // in seconds
+  }
+}
+```
+
+### Application Service Example
+
+```typescript
+// src/core/services/readerService.ts
+import { Reader } from '@/core/domain/models/reader';
+import { ErrorHandler } from '@/core/errors';
+
+export class ReaderService {
+  private reader: Reader;
+  
+  constructor(userName: string) {
+    this.reader = new Reader(userName);
+  }
+  
+  async loadText(text: string): Promise<void> {
+    try {
+      this.reader.setText(text);
+    } catch (error) {
+      ErrorHandler.getInstance().handleError(error, { context: 'ReaderService.loadText' });
+      throw error;
+    }
+  }
+  
+  async calculateReadingStats(text: string): Promise<{ 
+    wordCount: number;
+    readingTime: number;
+  }> {
+    try {
+      const words = text.split(/\s+/).filter(w => w.length > 0);
+      const wordCount = words.length;
+      const readingTime = wordCount / this.reader.getSpeed() * 60; // in seconds
+      
+      return {
+        wordCount,
+        readingTime
+      };
+    } catch (error) {
+      ErrorHandler.getInstance().handleError(error, { context: 'ReaderService.calculateReadingStats' });
+      throw error;
+    }
+  }
+}
+```
+
+### Hook Example
+
+```typescript
+// src/features/reader/hooks/useReaderControls.ts
+import { useState } from 'react';
+import { ReaderService } from '@/core/services/readerService';
+
+export function useReaderControls() {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [wpm, setWpm] = useState(300);
+  const [currentPosition, setCurrentPosition] = useState(0);
+  
+  const readerService = new ReaderService('User');
+  
+  const play = () => {
+    setIsPlaying(true);
+    // Implementation details...
+  };
+  
+  const pause = () => {
+    setIsPlaying(false);
+    // Implementation details...
+  };
+  
+  const adjustSpeed = (newWpm: number) => {
+    if (newWpm >= 100 && newWpm <= 1000) {
+      setWpm(newWpm);
+      // Implementation details...
+    }
+  };
+  
+  return { 
+    isPlaying,
+    wpm, 
+    currentPosition,
+    play,
+    pause,
+    adjustSpeed
+  };
+}
+```
+
+### Component Example
+
+```typescript
+// src/features/reader/components/SpeedReader.tsx
+import React from 'react';
+import { Button } from '@/shared/components/ui/Button';
+import { useReaderControls } from '../hooks/useReaderControls';
+
+export function SpeedReader({ text }: { text: string }) {
+  const { 
+    isPlaying,
+    wpm, 
+    currentPosition,
+    play,
+    pause,
+    adjustSpeed
+  } = useReaderControls();
+  
+  return (
+    <div className="speed-reader">
+      <div className="controls">
+        <Button onClick={isPlaying ? pause : play}>
+          {isPlaying ? 'Pause' : 'Play'}
+        </Button>
+        
+        <div className="speed-controls">
+          <button onClick={() => adjustSpeed(wpm - 25)}>-</button>
+          <span>{wpm} WPM</span>
+          <button onClick={() => adjustSpeed(wpm + 25)}>+</button>
+        </div>
+      </div>
+      
+      <div className="word-display">
+        {/* Word display implementation */}
+      </div>
+    </div>
+  );
+}
+```

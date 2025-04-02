@@ -1,0 +1,371 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+
+# Your rule content
+
+- You can @ files here
+- You can use markdown but dont have to
+# Speed Reader Application - Project Structure
+
+## Directory Structure
+
+```
+/speed-reader
+├── src/                          # Application source code
+│   ├── features/                 # Feature-based organization
+│   │   ├── reader/               # Speed reading feature
+│   │   │   ├── components/       # Reader UI components
+│   │   │   ├── hooks/            # Reader-specific hooks
+│   │   │   ├── models/           # Reader data models
+│   │   │   ├── services/         # Reader business logic
+│   │   │   ├── utils/            # Reader utilities
+│   │   │   └── index.ts          # Public feature API
+│   │   │
+│   │   ├── pdf-management/       # PDF handling feature
+│   │   │   ├── components/       # PDF UI components
+│   │   │   ├── hooks/            # PDF-specific hooks
+│   │   │   ├── services/         # PDF processing services
+│   │   │   ├── utils/            # PDF utilities
+│   │   │   └── index.ts          # Public feature API
+│   │   │
+│   │   ├── subscription/         # Subscription management
+│   │   │   ├── components/       # Subscription UI components
+│   │   │   ├── services/         # Subscription business logic
+│   │   │   └── index.ts          # Public feature API
+│   │   │
+│   │   ├── statistics/           # Reading statistics feature
+│   │   │   ├── components/       # Statistics UI components
+│   │   │   ├── services/         # Statistics calculation logic
+│   │   │   └── index.ts          # Public feature API
+│   │   │
+│   │   └── landing/              # Landing page feature
+│   │       ├── components/       # Landing page components
+│   │       └── index.ts          # Public feature API
+│   │
+│   ├── core/                     # Core business logic
+│   │   ├── domain/               # Domain entities and interfaces
+│   │   │   ├── types.ts          # Shared domain types
+│   │   │   ├── models/           # Domain models
+│   │   │   └── interfaces/       # Domain interfaces
+│   │   │
+│   │   ├── services/             # Core application services
+│   │   │   ├── storage.ts        # Storage service interface
+│   │   │   ├── analytics.ts      # Analytics service interface
+│   │   │   └── auth.ts           # Authentication service interface
+│   │   │
+│   │   └── errors/               # Error handling
+│   │       ├── app-error.ts      # Application error classes
+│   │       ├── error-handler.ts  # Error handling logic
+│   │       └── index.ts          # Error module exports
+│   │
+│   ├── api/                      # API layer
+│   │   ├── supabase/             # Supabase client configuration
+│   │   │   ├── client.ts         # Supabase client setup
+│   │   │   ├── queries.ts        # Reusable database queries
+│   │   │   └── index.ts          # Supabase exports
+│   │   │
+│   │   ├── tts/                  # Text-to-speech API
+│   │   │   ├── client.ts         # TTS API client
+│   │   │   └── index.ts          # TTS exports
+│   │   │
+│   │   ├── translation/          # Translation API
+│   │   └── stripe/               # Payment API
+│   │
+│   ├── infrastructure/           # External services implementation
+│   │   ├── database/             # Database implementation
+│   │   │   ├── repositories/     # Data access repositories
+│   │   │   └── migrations/       # Database migrations
+│   │   │
+│   │   ├── storage/              # Storage implementation
+│   │   ├── monitoring/           # Error monitoring implementation
+│   │   └── analytics/            # Analytics implementation
+│   │
+│   ├── shared/                   # Shared code
+│   │   ├── components/           # Shared UI components
+│   │   │   ├── ui/               # Basic UI components
+│   │   │   │   ├── Button.tsx
+│   │   │   │   ├── Input.tsx
+│   │   │   │   └── ...
+│   │   │   │
+│   │   │   ├── layout/           # Layout components
+│   │   │   └── feedback/         # Feedback components (modals, toasts)
+│   │   │
+│   │   ├── hooks/                # Shared React hooks
+│   │   │   ├── useLocalStorage.ts
+│   │   │   ├── useMediaQuery.ts
+│   │   │   └── ...
+│   │   │
+│   │   ├── utils/                # Shared utility functions
+│   │   │   ├── formatting.ts
+│   │   │   ├── validation.ts
+│   │   │   └── ...
+│   │   │
+│   │   └── constants/            # Shared constants
+│   │       ├── colors.ts
+│   │       ├── config.ts
+│   │       └── ...
+│   │
+│   ├── config/                   # Application configuration
+│   │   ├── routes.ts             # Application routes
+│   │   ├── theme.ts              # Theme configuration
+│   │   ├── feature-flags.ts      # Feature flags
+│   │   └── env.ts                # Environment configuration
+│   │
+│   ├── assets/                   # Static assets
+│   │   ├── images/               # Image assets
+│   │   ├── fonts/                # Font assets
+│   │   └── styles/               # Global styles
+│   │
+│   ├── App.tsx                   # Main application component
+│   └── main.tsx                  # Application entry point
+│
+├── supabase/                     # Supabase configuration
+│   ├── migrations/               # Database migrations
+│   ├── functions/                # Edge functions
+│   │   ├── pdf-processing/       # PDF processing functions
+│   │   ├── auth-hooks/           # Authentication hook functions
+│   │   └── payment-webhooks/     # Payment webhook handlers
+│   │
+│   └── seed/                     # Seed data for development
+│
+├── tests/                        # Test files
+│   ├── unit/                     # Unit tests
+│   │   ├── features/             # Tests organized by feature
+│   │   ├── core/                 # Tests for core functionality
+│   │   └── shared/               # Tests for shared code
+│   │
+│   ├── integration/              # Integration tests
+│   ├── e2e/                      # End-to-end tests
+│   │   ├── specs/                # Test specifications
+│   │   └── fixtures/             # Test data fixtures
+│   │
+│   └── mocks/                    # Mock implementations for testing
+│
+├── scripts/                      # Utility scripts
+│   ├── setup.js                  # Project setup script
+│   ├── generate-types.js         # Type generation from database
+│   └── analyze-bundle.js         # Bundle analysis script
+│
+├── docs/                         # Documentation
+│   ├── api/                      # API documentation
+│   ├── architecture/             # Architecture documentation
+│   │   ├── diagrams/             # Architecture diagrams
+│   │   └── decisions/            # Architecture decision records
+│   │
+│   ├── developer/                # Developer documentation
+│   │   ├── setup.md              # Setup guide
+│   │   ├── conventions.md        # Code conventions
+│   │   └── contributions.md      # Contribution guide
+│   │
+│   └── user/                     # User documentation
+│
+├── public/                       # Public static assets
+│   ├── favicon.ico               # Favicon
+│   ├── robots.txt                # Robots file
+│   └── app-preview.png           # App preview image
+│
+├── .github/                      # GitHub configuration
+│   └── workflows/                # GitHub Actions workflows
+│
+├── .env.example                  # Example environment variables
+├── .gitignore                    # Git ignore file
+├── package.json                  # Package configuration
+├── tsconfig.json                 # TypeScript configuration
+├── vite.config.ts                # Vite configuration
+├── tailwind.config.js            # Tailwind configuration
+├── postcss.config.js             # PostCSS configuration
+├── cypress.config.ts             # Cypress configuration
+├── vitest.config.ts              # Vitest configuration
+└── README.md                     # Project readme
+```
+
+## Explanation
+
+### Feature-Based Organization
+
+The structure organizes code primarily by feature or domain rather than by technical type. This approach:
+
+1. **Enhances Discoverability**: Developers can easily find all related code for a feature in one place
+2. **Improves Cohesion**: Related code stays together, making changes more predictable
+3. **Enables Parallel Development**: Teams can work on different features without conflicts
+4. **Supports Feature Flagging**: Makes it easier to toggle entire features on/off
+
+### Core Business Logic
+
+The `/core` directory contains essential business logic independent of UI frameworks:
+
+- **Domain Models**: Business entities and value objects that represent core concepts
+- **Services**: Pure business logic that implements use cases
+- **Error Handling**: Centralized error management
+
+### Clean Architecture Implementation
+
+The structure follows clean architecture principles with layers:
+
+1. **Presentation Layer** (features/components)
+2. **Domain Layer** (core/domain)
+3. **Data Layer** (infrastructure)
+4. **API Layer** (api)
+
+This ensures dependencies point inward, making the system more maintainable and testable.
+
+### Shared Resources
+
+Reusable code is placed in the `/shared` directory to prevent duplication:
+
+- **UI Components**: Basic building blocks separated by purpose
+- **Hooks**: Reusable React logic
+- **Utilities**: Helper functions for common tasks
+- **Constants**: Application-wide constants
+
+### Configuration Management
+
+The `/config` directory centralizes application configuration:
+
+- **Environment Variables**: Managed through a dedicated configuration service
+- **Feature Flags**: Centralized control for enabling/disabling features
+- **Routing**: Application routes defined in one place
+- **Theming**: Global theme settings
+
+### Testing Strategy
+
+Tests are organized in their own directory structure mirroring the source code:
+
+- **Unit Tests**: Test individual components and functions
+- **Integration Tests**: Test component interactions
+- **E2E Tests**: Test complete user flows
+- **Mock Data**: Reusable test fixtures
+
+### Documentation
+
+Comprehensive documentation includes:
+
+- **Architecture Documentation**: Overall system design and decision records
+- **API Documentation**: Interface specifications for external services
+- **Developer Guides**: Setup instructions and contribution guidelines
+- **User Documentation**: End-user guides
+
+### Build and Deployment
+
+Build configuration files are at the root level for visibility:
+
+- **Vite Configuration**: Build tooling and optimizations
+- **TypeScript Configuration**: Type checking settings
+- **CI/CD Workflows**: Automated testing and deployment pipelines
+
+## Recommendations
+
+### File Naming Conventions
+
+- **Components**: `PascalCase.tsx` (e.g., `SpeedReader.tsx`)
+- **Hooks**: `useCamelCase.ts` (e.g., `useWordHighlighting.ts`)
+- **Services/Utils**: `camelCase.ts` (e.g., `pdfProcessor.ts`)
+- **Types/Interfaces**: `PascalCase.types.ts` (e.g., `Reader.types.ts`)
+- **Test Files**: Match source file with `.test.ts` or `.spec.ts` extension
+
+### Module Organization
+
+- **Explicit Exports**: Use named exports for clarity
+- **Barrel Files**: Create `index.ts` files to expose public API of modules
+- **Encapsulation**: Expose only what's necessary from each module
+
+```typescript
+// features/reader/index.ts
+export { default as SpeedReader } from './components/SpeedReader';
+export { useReaderSettings } from './hooks/useReaderSettings';
+export type { ReaderSettings } from './models/types';
+// Do not export internal implementation details
+```
+
+### Environment Configuration
+
+- Use typed environment variables with a central access point:
+
+```typescript
+// config/env.ts
+export const env = {
+  app: {
+    name: import.meta.env.VITE_APP_NAME as string,
+    url: import.meta.env.VITE_APP_URL as string,
+  },
+  supabase: {
+    url: import.meta.env.VITE_SUPABASE_URL as string,
+    anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
+  },
+  features: {
+    enableTTS: import.meta.env.VITE_ENABLE_TTS === 'true',
+    enablePDFUpload: import.meta.env.VITE_ENABLE_PDF_UPLOAD === 'true',
+    enableTranslations: import.meta.env.VITE_ENABLE_TRANSLATIONS === 'true',
+  },
+  // Add validation to ensure required variables exist
+  validate() {
+    const required = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'];
+    for (const key of required) {
+      if (!import.meta.env[key]) {
+        throw new Error(`Missing required environment variable: ${key}`);
+      }
+    }
+    return this;
+  }
+}.validate();
+```
+
+### Dependency Management
+
+- Group dependencies in package.json by purpose:
+
+```json
+{
+  "dependencies": {
+    "// UI Framework": "",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "framer-motion": "^10.16.4",
+    
+    "// State Management": "",
+    "zustand": "^4.4.6",
+    
+    "// Data Layer": "",
+    "@supabase/supabase-js": "^2.39.0",
+    
+    "// Utilities": "",
+    "date-fns": "^2.30.0"
+  }
+}
+```
+
+### API Layer Design
+
+- Use repository pattern for data access:
+
+```typescript
+// api/supabase/repositories/pdf-repository.ts
+import { createClient } from '@supabase/supabase-js';
+import { env } from '@/config/env';
+
+export class PDFRepository {
+  private client = createClient(env.supabase.url, env.supabase.anonKey);
+  
+  async getUserPDFs(userId: string): Promise<PDFRecord[]> {
+    const { data, error } = await this.client
+      .from('pdf_files')
+      .select('*')
+      .eq('uploader_id', userId)
+      .order('created_at', { ascending: false });
+      
+    if (error) throw new DatabaseError(error.message);
+    return data || [];
+  }
+  
+  // Other methods for CRUD operations
+}
+```
+
+This structure supports clean architecture principles, making it easy to:
+- Add new features without modifying existing code
+- Replace implementation details (like switching from Supabase to another provider)
+- Test components and logic in isolation
+- Scale the application as requirements grow
