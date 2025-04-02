@@ -75,6 +75,16 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
     }
   };
 
+  // Set up the PDF.js worker to ensure version consistency
+  function setupPDFWorker() {
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      // Force a specific version to avoid version mismatches
+      const pdfVersion = '5.1.91'; // Match the version used in the project
+      console.log(`Setting up PDF.js worker with version ${pdfVersion}`);
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}/build/pdf.worker.min.js`;
+    }
+  }
+
   // Last-resort PDF extraction method (third approach)
   const lastResortPDFExtraction = async (file: File): Promise<string> => {
     try {
@@ -85,24 +95,26 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
         message: 'Trying emergency PDF extraction. This may take a moment...'
       });
       
-      // Ensure worker is loaded
-      if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-      }
+      // Ensure worker is loaded with the correct version
+      setupPDFWorker();
       
       // Extract text with simplified approach
       const parsePromise = (async () => {
         const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({
+        
+        console.log(`Using PDF.js version: ${pdfjsLib.version}`);
+        
+        // Use bare minimum options
+        const loadingTask = pdfjsLib.getDocument({
           data: arrayBuffer,
-          disableAutoFetch: false,
-          disableStream: false,
-          disableRange: false
-        }).promise;
-
+          cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.1.91/cmaps/',
+          cMapPacked: true
+        });
+        
+        const pdf = await loadingTask.promise;
         if (!pdf) throw new Error('Failed to load PDF');
         
-        const totalPages = Math.min(pdf.numPages, 50); // Limit to 50 pages
+        const totalPages = Math.min(pdf.numPages || 1, 50); // Limit to 50 pages
         let fullText = '';
 
         for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
@@ -113,21 +125,14 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
             // Simple text extraction
             const pageItems = content.items;
             let pageText = '';
-            let lastY;
             
-            // Sort items by vertical position
-            pageItems.sort((a: any, b: any) => b.transform[5] - a.transform[5]);
-            
+            // Just concatenate the strings in the order they appear
             for (const item of pageItems) {
               const textItem = item as any;
-              if (lastY !== undefined && Math.abs(textItem.transform[5] - lastY) > 5) {
-                pageText += '\n';
-              }
               pageText += textItem.str + ' ';
-              lastY = textItem.transform[5];
             }
             
-            fullText += pageText + '\n\n';
+            fullText += pageText.trim() + '\n\n';
           } catch (error) {
             console.warn(`Error extracting page ${pageNum}:`, error);
           }
