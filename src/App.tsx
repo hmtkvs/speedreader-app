@@ -104,6 +104,7 @@ function App() {
   const [showPDFManager, setShowPDFManager] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [stats, setStats] = useState(() => StatisticsService.getInstance().getReadingStats());
+  const [lastAdjustTime, setLastAdjustTime] = useState({ wpm: 0, words: 0, font: 0 });
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -156,6 +157,7 @@ function App() {
   };
 
   const adjustFontSize = (increment: boolean) => {
+    // Remove throttling
     const step = 4;
     const newSize = increment ? fontSize + step : fontSize - step;
     if (newSize >= 32 && newSize <= 96) {
@@ -268,77 +270,131 @@ function App() {
         {/* Settings Bar */}
         <div className="flex justify-end items-center mb-8 text-sm">
           <div 
-            className="flex items-center gap-8 p-4 rounded-2xl relative backdrop-blur-md"
+            className="flex items-center gap-10 p-5 rounded-2xl relative backdrop-blur-md select-none"
             style={{ 
               background: `linear-gradient(135deg, ${colorScheme.background}E6, ${colorScheme.background}99)`,
-              boxShadow: `0 8px 32px -4px ${colorScheme.text}1A`,
+              boxShadow: `0 10px 32px -4px ${colorScheme.text}22`,
               zIndex: 50,
-              fontSize: `${Math.min(14, Math.max(11, window.innerWidth / 50))}px`
+              fontSize: `${Math.min(16, Math.max(12, window.innerWidth / 50))}px`
             }}
           >
             <div
               className="absolute inset-0 rounded-2xl"
               style={{
-                background: `radial-gradient(circle at top left, ${colorScheme.highlight}0A, transparent)`,
+                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
               }}
             />
             {/* WPM Control */}
-            <div className="flex flex-col items-center gap-1">
+            <div className="flex flex-col items-center gap-2 select-none">
               <button 
                 onClick={() => adjustWpm(true)}
-                className="hover:opacity-100 opacity-60 transition-colors p-1"
+                style={{
+                  width: '50px',
+                  height: '50px',
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: 'inherit'
+                }}
               >
-                <IoChevronUpOutline size={Math.min(20, Math.max(16, window.innerWidth / 40))} />
+                ↑
               </button>
-              <div className="flex items-center gap-0.5 text-xs sm:text-sm whitespace-nowrap">
+              <div className="flex items-center gap-0.5 text-sm sm:text-base whitespace-nowrap font-medium select-none">
                 <span>{isMobile ? 'W' : 'WPM'}</span>
                 <span className="opacity-100 tabular-nums">{wpm}×{wordsAtTime}</span>
               </div>
               <button 
                 onClick={() => adjustWpm(false)}
-                className="hover:opacity-100 opacity-60 transition-colors p-1"
+                style={{
+                  width: '50px',
+                  height: '50px',
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: 'inherit'
+                }}
               >
-                <IoChevronDownOutline size={Math.min(20, Math.max(16, window.innerWidth / 40))} />
+                ↓
               </button>
             </div>
 
             {/* Words at a time */}
-            <div className="flex flex-col items-center gap-1">
+            <div className="flex flex-col items-center gap-2 select-none">
               <button 
                 onClick={() => adjustWordsAtTime(true)}
-                className="hover:opacity-100 opacity-60 transition-colors p-1"
+                style={{
+                  width: '50px',
+                  height: '50px',
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: 'inherit'
+                }}
               >
-                <IoChevronUpOutline size={Math.min(20, Math.max(16, window.innerWidth / 40))} />
+                ↑
               </button>
-              <div className="flex items-center gap-0.5 text-xs sm:text-sm whitespace-nowrap">
+              <div className="flex items-center gap-0.5 text-sm sm:text-base whitespace-nowrap font-medium select-none">
                 <span>{isMobile ? '×' : 'Words'}</span>
                 <span className="opacity-100 tabular-nums">{wordsAtTime}</span>
               </div>
               <button 
                 onClick={() => adjustWordsAtTime(false)}
-                className="hover:opacity-100 opacity-60 transition-colors p-1"
+                style={{
+                  width: '50px',
+                  height: '50px',
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: 'inherit'
+                }}
               >
-                <IoChevronDownOutline size={Math.min(20, Math.max(16, window.innerWidth / 40))} />
+                ↓
               </button>
             </div>
 
             {/* Font size */}
-            <div className="flex flex-col items-center gap-1">
+            <div className="flex flex-col items-center gap-2 select-none">
               <button 
                 onClick={() => adjustFontSize(true)}
-                className="hover:opacity-100 opacity-60 transition-colors p-1"
+                style={{
+                  width: '50px',
+                  height: '50px',
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: 'inherit'
+                }}
               >
-                <IoChevronUpOutline size={Math.min(20, Math.max(16, window.innerWidth / 40))} />
+                ↑
               </button>
-              <div className="flex items-center gap-0.5 text-xs sm:text-sm whitespace-nowrap">
+              <div className="flex items-center gap-0.5 text-sm sm:text-base whitespace-nowrap font-medium select-none">
                 <span>{isMobile ? 'F' : 'Font'}</span>
                 <span className="opacity-100 tabular-nums">{fontSize}</span>
               </div>
               <button 
                 onClick={() => adjustFontSize(false)}
-                className="hover:opacity-100 opacity-60 transition-colors p-1"
+                style={{
+                  width: '50px',
+                  height: '50px',
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: 'inherit'
+                }}
               >
-                <IoChevronDownOutline size={Math.min(20, Math.max(16, window.innerWidth / 40))} />
+                ↓
               </button>
             </div>
           </div>
@@ -356,7 +412,7 @@ function App() {
             <div
               className="absolute inset-0 rounded-xl"
               style={{
-                background: `radial-gradient(circle at top left, ${colorScheme.highlight}0A, transparent)`,
+                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
               }}
             />
             <IoTime size={16} className="relative z-10 opacity-60" />
@@ -430,7 +486,7 @@ function App() {
                 }}
               >
                 <span>{word.before}</span>
-                <span style={{ color: colorScheme.highlight }}>{word.highlight}</span>
+                <span style={{ color: colorScheme.highlight || '#FF3B30' }}>{word.highlight}</span>
                 <span>{word.after}</span>
               </div>
             ))}
@@ -455,7 +511,7 @@ function App() {
               onClick={() => setIsFullscreen(true)}
               style={{ 
                 width: `${progress}%`,
-                background: colorScheme.highlight
+                background: colorScheme.highlight || '#FF3B30'
               }}
             />
           </div>
@@ -474,7 +530,7 @@ function App() {
             <div
               className="absolute inset-0 rounded-2xl"
               style={{
-                background: `radial-gradient(circle at top left, ${colorScheme.highlight}0A, transparent)`,
+                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
               }}
             />
             <IoExpand size={24} />
@@ -490,7 +546,7 @@ function App() {
             <div
               className="absolute inset-0 rounded-2xl"
               style={{
-                background: `radial-gradient(circle at top left, ${colorScheme.highlight}0A, transparent)`,
+                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
               }}
             />
             {useTTS ? <IoVolumeHigh size={24} /> : <IoVolumeMute size={24} />}
@@ -506,7 +562,7 @@ function App() {
             <div
               className="absolute inset-0 rounded-2xl"
               style={{
-                background: `radial-gradient(circle at top left, ${colorScheme.highlight}0A, transparent)`,
+                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
               }}
             />
             <IoSettingsOutline size={24} />
@@ -522,7 +578,7 @@ function App() {
             <div
               className="absolute inset-0 rounded-2xl"
               style={{
-                background: `radial-gradient(circle at top left, ${colorScheme.highlight}0A, transparent)`,
+                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
               }}
             />
             <MdContentPaste size={24} />
@@ -538,7 +594,7 @@ function App() {
             <div
               className="absolute inset-0 rounded-2xl"
               style={{
-                background: `radial-gradient(circle at top left, ${colorScheme.highlight}0A, transparent)`,
+                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
               }}
             />
             <BiSkipPrevious size={24} />
@@ -554,7 +610,7 @@ function App() {
             <div
               className="absolute inset-0 rounded-2xl"
               style={{
-                background: `radial-gradient(circle at top left, ${colorScheme.highlight}0A, transparent)`,
+                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
               }}
             />
             {isPlaying ? <IoPauseSharp size={24} /> : <IoPlaySharp size={24} />}
@@ -570,7 +626,7 @@ function App() {
             <div
               className="absolute inset-0 rounded-2xl"
               style={{
-                background: `radial-gradient(circle at top left, ${colorScheme.highlight}0A, transparent)`,
+                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
               }}
             />
             <BiSkipNext size={24} />
