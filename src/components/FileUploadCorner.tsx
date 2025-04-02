@@ -6,6 +6,7 @@ import { ReaderModel } from '../models/reader';
 import { FileRecord } from '../types/common';
 import { parsePDF } from '../utils/pdfParser';
 import { Platform } from '../utils/platform';
+import * as pdfjsLib from 'pdfjs-dist'; // Import PDF.js directly for last-resort fallback
 
 interface FileUploadCornerProps {
   colorScheme: {
@@ -74,6 +75,82 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
     }
   };
 
+  // Last-resort PDF extraction method (third approach)
+  const lastResortPDFExtraction = async (file: File): Promise<string> => {
+    try {
+      console.log('Using last-resort PDF extraction method...');
+      
+      setNotification({
+        type: 'warning',
+        message: 'Trying emergency PDF extraction. This may take a moment...'
+      });
+      
+      // Ensure worker is loaded
+      if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+      }
+      
+      // Extract text with simplified approach
+      const parsePromise = (async () => {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({
+          data: arrayBuffer,
+          disableAutoFetch: false,
+          disableStream: false,
+          disableRange: false
+        }).promise;
+
+        if (!pdf) throw new Error('Failed to load PDF');
+        
+        const totalPages = Math.min(pdf.numPages, 50); // Limit to 50 pages
+        let fullText = '';
+
+        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+          try {
+            const page = await pdf.getPage(pageNum);
+            const content = await page.getTextContent();
+            
+            // Simple text extraction
+            const pageItems = content.items;
+            let pageText = '';
+            let lastY;
+            
+            // Sort items by vertical position
+            pageItems.sort((a: any, b: any) => b.transform[5] - a.transform[5]);
+            
+            for (const item of pageItems) {
+              const textItem = item as any;
+              if (lastY !== undefined && Math.abs(textItem.transform[5] - lastY) > 5) {
+                pageText += '\n';
+              }
+              pageText += textItem.str + ' ';
+              lastY = textItem.transform[5];
+            }
+            
+            fullText += pageText + '\n\n';
+          } catch (error) {
+            console.warn(`Error extracting page ${pageNum}:`, error);
+          }
+        }
+
+        return fullText.trim();
+      })();
+      
+      // Add a timeout
+      const result = await Promise.race([
+        parsePromise,
+        new Promise<string>((_, reject) => 
+          setTimeout(() => reject(new Error('PDF processing timeout')), 30000)
+        )
+      ]);
+      
+      return result || 'No text could be extracted from the PDF.';
+    } catch (error) {
+      console.error('Last-resort extraction failed:', error);
+      throw new Error('All PDF extraction methods failed. Unable to process this document.');
+    }
+  };
+
   // Fallback method to read text content directly without PDF.js
   const extractTextWithoutPdfJs = async (file: File): Promise<string> => {
     try {
@@ -84,6 +161,13 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
         type: 'warning',
         message: 'PDF extraction is limited. Some formatting may be lost.'
       });
+      
+      // Try our last-resort method first before giving up
+      try {
+        return await lastResortPDFExtraction(file);
+      } catch (lastResortError) {
+        console.log('Last-resort method failed, falling back to simple read', lastResortError);
+      }
       
       // Try to do a simple read of the file - might work for some basic PDFs
       try {
@@ -195,10 +279,18 @@ Last Modified: ${new Date(file.lastModified).toLocaleString()}
           clearAllTimeouts();
           console.error('Primary PDF parsing failed, trying fallback method:', pdfJsError);
           
+          // Check if this is a detached ArrayBuffer error
+          const errorString = String(pdfJsError);
+          const isDetachedBufferError = 
+            errorString.includes('detached') || 
+            errorString.includes('ArrayBuffer');
+          
           // Let the user know we're using a fallback method
           setNotification({
             type: 'warning',
-            message: 'PDF processing issues detected, using fallback method...'
+            message: isDetachedBufferError
+              ? 'PDF buffer processing issue detected, trying alternative method...'
+              : 'PDF processing issues detected, using fallback method...'
           });
           
           setUploadProgress(60);
