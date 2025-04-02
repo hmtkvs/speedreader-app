@@ -147,18 +147,18 @@ function loadWorker() {
   }
 
   try {
-    // Force a specific version to avoid mismatches
-    const pdfVersion = '5.1.91'; // Set a fixed version
+    // Use a specific version that's known to exist on CDN
+    const pdfVersion = '3.11.174'; // Set to known working version
     console.log(`Setting PDF.js worker with version ${pdfVersion}`);
     
-    // Use CDN for the worker file with the exact same version
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}/build/pdf.worker.min.js`;
+    // Use CDN for the worker file with a specific version
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfVersion}/pdf.worker.min.js`;
     console.log(`Set worker URL: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`);
   } catch (error) {
     console.error('Error setting PDF.js worker:', error);
-    // Fallback to the same hardcoded version
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.1.91/build/pdf.worker.min.js';
-    console.log('Using fallback worker URL with version 5.1.91');
+    // Fallback to known working version
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    console.log('Using fallback worker URL with version 3.11.174');
   }
 }
 
@@ -212,7 +212,7 @@ function isValidContent(text: string): boolean {
 export async function parsePDF(
   file: File,
   options: PDFParseOptions = DEFAULT_OPTIONS
-): Promise<PDFPage[]> {
+): Promise<string> {
   try {
     // Load the worker before processing
     loadWorker();
@@ -229,31 +229,32 @@ export async function parsePDF(
       // Load the PDF with optimal settings
       const loadingTask = pdfjsLib.getDocument({
         data: arrayBuffer,
-        cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.1.91/cmaps/',
+        cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
         cMapPacked: true,
       });
       
       const pdf = await loadingTask.promise as PDFDocumentProxy;
-      const totalPages = Math.min(pdf.numPages, options.maxPages);
+      const totalPages = Math.min(pdf.numPages, options.maxPages || DEFAULT_OPTIONS.maxPages);
       console.log(`PDF loaded. Processing ${totalPages} pages...`);
       
       // Extract text from each page with better error handling
+      let fullText = '';
       const pages: PDFPage[] = [];
       for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
         try {
           console.log(`Processing page ${pageNum}/${totalPages}`);
           const page = await pdf.getPage(pageNum);
           
-          const textContent = await page.getTextContent({
-            normalizeWhitespace: true
-          });
+          const textContent = await page.getTextContent();
           
-          if (!isPDFStructureData(textContent)) {
-            console.warn(`Page ${pageNum} does not contain valid text structure`);
+          // Check for valid text content
+          if (!textContent || !textContent.items) {
+            console.warn(`Page ${pageNum} does not contain valid text content`);
             continue;
           }
           
           const pageText = extractTextFromPDFPage(textContent);
+          fullText += pageText + '\n\n';
           
           // Only add non-empty pages
           if (pageText.trim().length > 0) {
@@ -264,43 +265,34 @@ export async function parsePDF(
           }
         } catch (pageError) {
           console.error(`Error processing page ${pageNum}:`, pageError);
-          errorHandler.logError('PDF page processing error', { pageNum, error: pageError });
+          errorHandler.handleError(pageError instanceof Error ? pageError : new Error(`Processing error on page ${pageNum}`));
         }
       }
       
-      // Check if we found readable content
-      const allText = pages.map(p => p.text).join(' ');
-      if (pages.length > 0 && isValidContent(allText)) {
-        return pages;
-      }
-      
-      // If we didn't get good results, try an alternative approach
-      console.log('Primary parsing method did not produce valid content. Trying alternative method...');
-      return await alternativeParsePDF(file, options.alternativePageLimit);
+      // Return the concatenated text from all pages
+      return sanitizeText(fullText.trim());
       
     } catch (primaryError) {
       console.error('Primary PDF parsing method failed:', primaryError);
-      errorHandler.logError('Primary PDF parsing failed', { error: primaryError });
+      errorHandler.handleError(primaryError instanceof Error ? primaryError : new Error('Primary PDF parsing failed'));
       
       // Try alternative approach if primary method fails
       try {
         console.log('Attempting to extract text using alternative method...');
-        const alternativeText = await extractTextWithAlternativeMethod(file, options);
+        // Use the existing alternative function
+        const alternativeText = await tryAlternativePDFParsing(file, options);
         
         console.log(`Alternative PDF parsing succeeded with ${alternativeText.length} characters`);
-        return alternativeText.trim().split('\n\n').map((text, index) => ({
-          text,
-          pageNumber: index + 1
-        }));
+        return sanitizeText(alternativeText.trim());
       } catch (alternativeError) {
         console.error('Alternative PDF parsing method failed:', alternativeError);
-        throw new PDFParsingError('All PDF parsing methods failed. The document might be using an unsupported format or encoding.', alternativeError as Error);
+        throw new PDFParsingError('All PDF parsing methods failed. The document might be using an unsupported format or encoding.');
       }
     }
   } catch (error) {
     console.error('PDF parsing failed:', error);
-    errorHandler.logError('PDF parsing error', { error });
-    throw new PDFParsingError('Failed to parse PDF. The file may be corrupted or password-protected.', error as Error);
+    errorHandler.handleError(error instanceof Error ? error : new Error('PDF parsing error'));
+    throw new PDFParsingError('Failed to parse PDF. The file may be corrupted or password-protected.');
   }
 }
 
@@ -308,7 +300,7 @@ export async function parsePDF(
  * Alternative method to parse a PDF when the primary method fails.
  * Uses a fresh ArrayBuffer and different parsing options.
  */
-export async function alternativeParsePDF(file: File, pageLimit?: number): Promise<PDFPage[]> {
+export async function alternativeParsePDF(file: File, pageLimit: number = 30): Promise<PDFPage[]> {
   console.log(`Starting alternative PDF parsing with PDF.js version ${pdfjsLib.version}`);
   loadWorker();
   
@@ -322,12 +314,12 @@ export async function alternativeParsePDF(file: File, pageLimit?: number): Promi
       disableRange: true,
       disableStream: true,
       disableAutoFetch: true,
-      cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.1.91/cmaps/',
+      cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
       cMapPacked: true,
     });
     
     const pdf = await loadingTask.promise as PDFDocumentProxy;
-    const pageCount = Math.min(pdf.numPages, pageLimit || 30); // Limit page count
+    const pageCount = Math.min(pdf.numPages, pageLimit); // Limit page count
     console.log(`Alternative parsing: PDF loaded. Processing ${pageCount} pages.`);
     
     const pages: PDFPage[] = [];
@@ -337,10 +329,7 @@ export async function alternativeParsePDF(file: File, pageLimit?: number): Promi
         const page = await pdf.getPage(i);
         
         // Try with different options
-        const textContent = await page.getTextContent({
-          normalizeWhitespace: false,
-          disableCombineTextItems: true
-        });
+        const textContent = await page.getTextContent();
         
         // Simpler text extraction to avoid structure issues
         let text = '';
@@ -371,6 +360,6 @@ export async function alternativeParsePDF(file: File, pageLimit?: number): Promi
     return pages;
   } catch (error: any) {
     console.error('Alternative PDF parsing failed:', error);
-    throw new PDFParsingError('Alternative parsing method failed.', error);
+    throw new PDFParsingError('Alternative parsing method failed.');
   }
 }

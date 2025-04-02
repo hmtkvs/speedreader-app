@@ -78,10 +78,10 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
   // Set up the PDF.js worker to ensure version consistency
   function setupPDFWorker() {
     if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      // Force a specific version to avoid version mismatches
-      const pdfVersion = '5.1.91'; // Match the version used in the project
+      // Use older version that's known to be available
+      const pdfVersion = '3.11.174';
       console.log(`Setting up PDF.js worker with version ${pdfVersion}`);
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}/build/pdf.worker.min.js`;
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfVersion}/pdf.worker.min.js`;
     }
   }
 
@@ -107,7 +107,7 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
         // Use bare minimum options
         const loadingTask = pdfjsLib.getDocument({
           data: arrayBuffer,
-          cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.1.91/cmaps/',
+          cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
           cMapPacked: true
         });
         
