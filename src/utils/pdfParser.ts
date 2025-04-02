@@ -12,8 +12,13 @@ interface PDFParseOptions {
   timeout?: number;
 }
 
-// Configure the worker directly - this is the key to solving the version mismatch
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+// Define a consistent version - should now match the package.json
+const PDFJS_VERSION = '3.11.174';
+console.log(`Using PDF.js version: ${PDFJS_VERSION}`);
+
+// Configure the worker directly with the same version
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.js`;
+console.log(`Worker URL set to: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`);
 
 /**
  * Parses a PDF file and extracts text content
@@ -46,7 +51,7 @@ export async function parsePDF(
     // Load the PDF document with a simple configuration
     const loadPromise = pdfjsLib.getDocument({ 
       data: arrayBuffer,
-      cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+      cMapUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
       cMapPacked: true 
     }).promise;
     
@@ -116,6 +121,8 @@ export async function parsePDF(
         errorMessage = 'The PDF file appears to be corrupted or invalid.';
       } else if (errorString.includes('timeout')) {
         errorMessage = 'PDF processing timed out. The file might be too large or complex.';
+      } else if (errorString.includes('version')) {
+        errorMessage = 'PDF.js version mismatch. Please check the console for details.';
       } else {
         errorMessage = `PDF parsing error: ${error.message}`;
       }
