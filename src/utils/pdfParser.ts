@@ -34,8 +34,15 @@ export async function parsePDF(
     const arrayBuffer = await file.arrayBuffer();
 
     // Load the PDF document
-    const loadPromise = pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const pdf = await Promise.race([loadPromise, timeoutPromise]);
+    let loadPromise;
+    try {
+      loadPromise = pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    } catch (loadError) {
+      console.error('PDF loading error:', loadError);
+      throw new PDFParsingError('Failed to load PDF document. The file may be corrupted or password protected.');
+    }
+    
+    const pdf = await Promise.race([loadPromise, timeoutPromise]) as pdfjsLib.PDFDocumentProxy;
     
     // Get total pages
     const totalPages = pdf.numPages;
@@ -48,25 +55,32 @@ export async function parsePDF(
 
     // Extract text from each page
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map((item: any) => item.str).join(' ');
-      
-      processedText += pageText.length;
-      if (processedText > SECURITY_CONFIG.maxTextLength) {
-        throw new PDFParsingError('PDF content exceeds maximum allowed length');
-      }
+      try {
+        const page = await pdf.getPage(pageNum);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map((item: any) => item.str).join(' ');
+        
+        processedText += pageText.length;
+        if (processedText > SECURITY_CONFIG.maxTextLength) {
+          throw new PDFParsingError('PDF content exceeds maximum allowed length');
+        }
 
-      fullText += pageText + '\n\n';
+        fullText += pageText + '\n\n';
+      } catch (pageError) {
+        console.error(`Error processing page ${pageNum}:`, pageError);
+        throw new PDFParsingError(`Failed to extract text from page ${pageNum}`);
+      }
     }
 
     // Sanitize text before returning
     return sanitizeText(fullText.trim());
   } catch (error) {
+    console.error('PDF parsing error details:', error);
+    
     const message = errorHandler.handleError(
       error instanceof Error ? error : new PDFParsingError('Unknown PDF parsing error'),
       { fileName: file.name, fileSize: file.size }
     );
-    throw new PDFParsingError(message);
+    throw new PDFParsingError(message || 'An unexpected error occurred. Please try again.');
   }
 }

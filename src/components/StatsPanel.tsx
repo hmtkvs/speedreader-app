@@ -5,7 +5,8 @@ import {
   IoCheckmarkCircle, IoTrendingDown, IoAlertCircle, IoStatsChart,
   IoCalendar, IoFlame, IoHeart, IoBarChart, IoHelpCircleOutline,
   IoRocket, IoInformationCircleOutline, IoTrophyOutline, IoArrowForward,
-  IoPulseOutline, IoTodayOutline, IoSchoolOutline, IoCalendarOutline
+  IoPulseOutline, IoTodayOutline, IoSchoolOutline, IoCalendarOutline,
+  IoBookOutline
 } from 'react-icons/io5';
 import { UserStats } from '../utils/statistics';
 

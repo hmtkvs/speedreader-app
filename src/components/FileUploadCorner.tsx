@@ -63,7 +63,15 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
       if (file.type === 'application/pdf') {
         // Parse PDF
         setUploadProgress(10);
-        text = await parsePDF(file);
+        try {
+          text = await parsePDF(file);
+        } catch (pdfError) {
+          if (pdfError instanceof Error) {
+            throw pdfError;
+          } else {
+            throw new Error('Failed to parse PDF file');
+          }
+        }
         setUploadProgress(90);
       } else {
         // Handle as text file
@@ -94,10 +102,17 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
       setCurrentFile(null);
     } catch (error) {
       console.error('Error processing file:', error);
+      
+      let errorMessage = 'Failed to process file';
+      if (error instanceof Error) {
+        errorMessage = error.message || errorMessage;
+      }
+      
       setNotification({
         type: 'error',
-        message: 'Failed to process file'
+        message: errorMessage
       });
+      
       setRecentFiles(prev => [{
         name: file.name,
         timestamp: new Date(),
@@ -105,6 +120,7 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
         type: file.type,
         size: file.size
       }, ...prev.slice(0, 4)]);
+      
       setCurrentFile(null);
       setUploadProgress(null);
     }
