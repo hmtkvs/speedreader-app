@@ -25,6 +25,7 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
     message: string;
   } | null>(null);
   const [recentFiles, setRecentFiles] = useState<FileRecord[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const validateFile = (file: File): boolean => {
     const allowedTypes = ['application/pdf', 'text/plain'];
@@ -48,41 +49,112 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
     return true;
   };
 
+  const clearInput = () => {
+    // Reset the file input to allow re-uploading the same file
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const processFile = async (file: File) => {
+    // Prevent multiple uploads simultaneously
+    if (isProcessing) {
+      return;
+    }
+
     try {
+      setIsProcessing(true);
+      
       if (!validateFile(file)) {
         setCurrentFile(null);
         setUploadProgress(null);
+        clearInput();
+        setIsProcessing(false);
         return;
       }
 
       setCurrentFile(file.name);
       setUploadProgress(0);
+      
+      // Show initial processing notification
+      setNotification({
+        type: 'success',
+        message: `Processing ${file.name}...`
+      });
 
       let text: string;
-      if (file.type === 'application/pdf') {
-        // Parse PDF
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        // Parse PDF with progress updates
         setUploadProgress(10);
+        
         try {
+          // Add intermediate progress updates to give feedback to the user
+          setTimeout(() => {
+            if (uploadProgress === 10) setUploadProgress(30);
+          }, 1000);
+          
+          setTimeout(() => {
+            if (uploadProgress === 30) setUploadProgress(50);
+          }, 2000);
+          
           text = await parsePDF(file);
+          setUploadProgress(90);
         } catch (pdfError) {
+          console.error('PDF parsing error:', pdfError);
           if (pdfError instanceof Error) {
             throw pdfError;
           } else {
-            throw new Error('Failed to parse PDF file');
+            throw new Error('Failed to parse PDF file. The file might be corrupted or password protected.');
           }
         }
-        setUploadProgress(90);
       } else {
         // Handle as text file
-        text = await file.text();
+        try {
+          text = await file.text();
+        } catch (textError) {
+          console.error('Text file parsing error:', textError);
+          throw new Error('Failed to read text file. The file might be corrupted.');
+        }
       }
 
+      setUploadProgress(95);
+      
+      // Add the book to the reader
+      let bookId;
+      try {
+        bookId = await reader.addBook(text, file.name);
+      } catch (addError) {
+        console.error('Error adding book:', addError);
+        throw new Error('Failed to process the file for reading');
+      }
+      
       setUploadProgress(100);
-      const bookId = await reader.addBook(text, file.name);
       
       if (bookId) {
-        await reader.loadBook(bookId);
+        try {
+          await reader.loadBook(bookId);
+        } catch (loadError) {
+          console.error('Error loading book:', loadError);
+          // We still consider this a success since the upload worked,
+          // but we'll note the loading issue
+          setNotification({
+            type: 'success',
+            message: `Uploaded ${file.name}, but couldn't open it automatically`
+          });
+          setRecentFiles(prev => [{
+            name: file.name,
+            timestamp: new Date(),
+            status: 'success',
+            type: file.type,
+            size: file.size
+          }, ...prev.slice(0, 4)]);
+          
+          clearInput();
+          setCurrentFile(null);
+          setUploadProgress(null);
+          setIsProcessing(false);
+          return;
+        }
       }
       
       setNotification({
@@ -98,8 +170,6 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
         size: file.size
       }, ...prev.slice(0, 4)]);
 
-      setUploadProgress(null);
-      setCurrentFile(null);
     } catch (error) {
       console.error('Error processing file:', error);
       
@@ -120,9 +190,12 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
         type: file.type,
         size: file.size
       }, ...prev.slice(0, 4)]);
-      
+    } finally {
+      // Always clean up, even if there was an error
+      clearInput();
       setCurrentFile(null);
       setUploadProgress(null);
+      setIsProcessing(false);
     }
   };
 
@@ -131,9 +204,18 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
     if (file) {
       processFile(file);
     }
-  }, [processFile]);
+  }, []);
 
   const handleButtonClick = () => {
+    if (isProcessing) {
+      // Prevent additional uploads while processing
+      setNotification({
+        type: 'error',
+        message: 'Still processing previous file, please wait...'
+      });
+      return;
+    }
+    
     if (Platform.isNative) {
       // Native file picker will be handled by the platform-specific code
       Platform.pickDocument((file) => processFile(file));
@@ -150,9 +232,9 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
     >
       <button
         onClick={handleButtonClick}
-        className="w-16 h-16 rounded-2xl flex items-center justify-center relative 
+        className={`w-16 h-16 rounded-2xl flex items-center justify-center relative 
           hover:scale-105 active:scale-95 transition-all duration-300
-          shadow-2xl backdrop-blur-md"
+          shadow-2xl backdrop-blur-md ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
         style={{ 
           background: `linear-gradient(135deg, 
             ${colorScheme.background}E6, 
@@ -160,6 +242,7 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
           )`,
           boxShadow: `0 8px 32px -4px ${colorScheme.text}1A`
         }}
+        disabled={isProcessing}
       >
         <motion.div
           className="absolute inset-0 rounded-2xl"
@@ -173,8 +256,27 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
           accept=".pdf,.txt"
           onChange={handleFileSelect}
           className="hidden"
+          disabled={isProcessing}
         />
         <IoDocumentText size={24} />
+        
+        {/* Upload progress indicator */}
+        {uploadProgress !== null && (
+          <motion.div 
+            className="absolute inset-0 rounded-2xl overflow-hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            <motion.div 
+              className="absolute bottom-0 left-0 right-0"
+              style={{ 
+                height: '4px',
+                background: colorScheme.highlight,
+                width: `${uploadProgress}%`
+              }}
+            />
+          </motion.div>
+        )}
       </button>
       
       {/* Upload Notification */}
