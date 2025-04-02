@@ -6,7 +6,6 @@ import { ReaderModel } from '../models/reader';
 import { FileRecord } from '../types/common';
 import { parsePDF } from '../utils/pdfParser';
 import { Platform } from '../utils/platform';
-import * as pdfjsLib from 'pdfjs-dist'; // Import PDF.js directly for last-resort fallback
 
 interface FileUploadCornerProps {
   colorScheme: {
@@ -75,147 +74,6 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
     }
   };
 
-  // Set up the PDF.js worker to ensure version consistency
-  function setupPDFWorker() {
-    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      // Use older version that's known to be available
-      const pdfVersion = '3.11.174';
-      console.log(`Setting up PDF.js worker with version ${pdfVersion}`);
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfVersion}/pdf.worker.min.js`;
-    }
-  }
-
-  // Last-resort PDF extraction method (third approach)
-  const lastResortPDFExtraction = async (file: File): Promise<string> => {
-    try {
-      console.log('Using last-resort PDF extraction method...');
-      
-      setNotification({
-        type: 'warning',
-        message: 'Trying emergency PDF extraction. This may take a moment...'
-      });
-      
-      // Ensure worker is loaded with the correct version
-      setupPDFWorker();
-      
-      // Extract text with simplified approach
-      const parsePromise = (async () => {
-        const arrayBuffer = await file.arrayBuffer();
-        
-        console.log(`Using PDF.js version: ${pdfjsLib.version}`);
-        
-        // Use bare minimum options
-        const loadingTask = pdfjsLib.getDocument({
-          data: arrayBuffer,
-          cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-          cMapPacked: true
-        });
-        
-        const pdf = await loadingTask.promise;
-        if (!pdf) throw new Error('Failed to load PDF');
-        
-        const totalPages = Math.min(pdf.numPages || 1, 50); // Limit to 50 pages
-        let fullText = '';
-
-        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-          try {
-            const page = await pdf.getPage(pageNum);
-            const content = await page.getTextContent();
-            
-            // Simple text extraction
-            const pageItems = content.items;
-            let pageText = '';
-            
-            // Just concatenate the strings in the order they appear
-            for (const item of pageItems) {
-              const textItem = item as any;
-              pageText += textItem.str + ' ';
-            }
-            
-            fullText += pageText.trim() + '\n\n';
-          } catch (error) {
-            console.warn(`Error extracting page ${pageNum}:`, error);
-          }
-        }
-
-        return fullText.trim();
-      })();
-      
-      // Add a timeout
-      const result = await Promise.race([
-        parsePromise,
-        new Promise<string>((_, reject) => 
-          setTimeout(() => reject(new Error('PDF processing timeout')), 30000)
-        )
-      ]);
-      
-      return result || 'No text could be extracted from the PDF.';
-    } catch (error) {
-      console.error('Last-resort extraction failed:', error);
-      throw new Error('All PDF extraction methods failed. Unable to process this document.');
-    }
-  };
-
-  // Fallback method to read text content directly without PDF.js
-  const extractTextWithoutPdfJs = async (file: File): Promise<string> => {
-    try {
-      console.log('Using text extraction fallback method...');
-      
-      // Show more descriptive notification about the fallback method
-      setNotification({
-        type: 'warning',
-        message: 'PDF extraction is limited. Some formatting may be lost.'
-      });
-      
-      // Try our last-resort method first before giving up
-      try {
-        return await lastResortPDFExtraction(file);
-      } catch (lastResortError) {
-        console.log('Last-resort method failed, falling back to simple read', lastResortError);
-      }
-      
-      // Try to do a simple read of the file - might work for some basic PDFs
-      try {
-        const text = await file.text();
-        // Clean the text and check if it has readable content
-        const cleanedText = text.replace(/[^\x20-\x7E\n\r\t]/g, ' ').trim();
-        
-        // If we got meaningful text that's not just PDF markers, return it
-        if (cleanedText.length > 200 && 
-            !cleanedText.includes('%PDF-') && 
-            !cleanedText.includes('endobj')) {
-          return cleanedText;
-        }
-      } catch (readError) {
-        console.log('Simple read failed, using fallback message', readError);
-      }
-      
-      // If simple read fails, create a message explaining the situation
-      const fileName = file.name;
-      const fileSize = (file.size / 1024).toFixed(2) + ' KB';
-      
-      return `
-This PDF document (${fileName}, ${fileSize}) could not be fully processed due to compatibility issues.
-
-Key information:
-- The PDF may be using advanced features or encoding
-- It may contain scanned images rather than text
-- It could be protected or using uncommon formatting
-
-Try with a different PDF file or convert this document to a more compatible format.
-
-[PDF Processing Information]
-File: ${fileName}
-Size: ${fileSize}
-Type: ${file.type}
-Last Modified: ${new Date(file.lastModified).toLocaleString()}
-`;
-    } catch (error) {
-      console.error('Fallback text extraction failed:', error);
-      throw new Error('Failed to process this PDF document');
-    }
-  };
-
   const processFile = async (file: File) => {
     // Prevent multiple uploads simultaneously
     if (isProcessing) {
@@ -243,69 +101,55 @@ Last Modified: ${new Date(file.lastModified).toLocaleString()}
         message: `Processing ${file.name}...`
       });
 
+      // Add intermediate progress updates to give feedback to the user
+      addTimeout(() => setUploadProgress(20), 500);
+      addTimeout(() => setUploadProgress(40), 1500);
+      
       let text: string;
+      
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        // Parse PDF with progress updates
+        // Parse PDF file
         setUploadProgress(10);
         
-        // Add intermediate progress updates to give feedback to the user
-        addTimeout(() => setUploadProgress(30), 1000);
-        addTimeout(() => setUploadProgress(50), 3000);
-        addTimeout(() => setUploadProgress(60), 5000);
-        
-        // Show processing notifications if it's taking a while
-        addTimeout(() => {
-          setNotification({
-            type: 'warning',
-            message: 'Still working on processing your PDF... This might take a moment.'
-          });
-        }, 3000);
-        
-        addTimeout(() => {
-          setNotification({
-            type: 'warning',
-            message: 'PDF processing is taking longer than expected. Complex documents may require more time.'
-          });
-        }, 7000);
-        
         try {
-          // Try parsing with PDF.js
+          // Process the PDF file
           text = await parsePDF(file);
-          clearAllTimeouts();
           
-          // Check if the parsed text is actually PDF structure data
-          if (text.startsWith('%PDF-') || text.includes('endobj') || text.includes('startxref')) {
-            console.error('PDF parsing returned raw PDF data instead of extracted text');
-            throw new Error('PDF parsing returned raw PDF structure');
+          // Validate the extracted text
+          if (!text || text.trim().length < 20) {
+            throw new Error('Extracted text is too short or empty');
           }
           
           setUploadProgress(90);
-        } catch (pdfJsError) {
-          clearAllTimeouts();
-          console.error('Primary PDF parsing failed, trying fallback method:', pdfJsError);
+        } catch (pdfError) {
+          console.error('PDF parsing failed:', pdfError);
           
-          // Check if this is a detached ArrayBuffer error
-          const errorString = String(pdfJsError);
-          const isDetachedBufferError = 
-            errorString.includes('detached') || 
-            errorString.includes('ArrayBuffer');
+          // Provide a helpful error message based on the error
+          let errorMessage = 'Failed to process PDF file';
+          if (pdfError instanceof Error) {
+            errorMessage = pdfError.message;
+          }
           
-          // Let the user know we're using a fallback method
+          // Alert the user
           setNotification({
-            type: 'warning',
-            message: isDetachedBufferError
-              ? 'PDF buffer processing issue detected, trying alternative method...'
-              : 'PDF processing issues detected, using fallback method...'
+            type: 'error',
+            message: errorMessage
           });
           
-          setUploadProgress(60);
-          
-          // Try fallback method
-          text = await extractTextWithoutPdfJs(file);
-          setUploadProgress(90);
+          // Create readable fallback message when all parsing methods fail
+          text = `
+This PDF document (${file.name}, ${(file.size / 1024).toFixed(2)} KB) could not be processed.
+
+Possible reasons:
+- The PDF may use advanced features or complex encoding
+- It might contain scanned images rather than text
+- It could be password-protected or corrupted
+
+Please try a different PDF file or convert this document to a more compatible format.
+`;
         }
       } else {
-        // Handle as text file
+        // Handle as plain text file
         try {
           text = await file.text();
         } catch (textError) {
@@ -316,7 +160,7 @@ Last Modified: ${new Date(file.lastModified).toLocaleString()}
 
       setUploadProgress(95);
       
-      // Add the book to the reader
+      // Add the text to the reader
       let bookId;
       try {
         bookId = await reader.addBook(text, file.name);
@@ -335,7 +179,7 @@ Last Modified: ${new Date(file.lastModified).toLocaleString()}
           // We still consider this a success since the upload worked,
           // but we'll note the loading issue
           setNotification({
-            type: 'success',
+            type: 'warning',
             message: `Uploaded ${file.name}, but couldn't open it automatically`
           });
           setRecentFiles(prev => [{

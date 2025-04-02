@@ -7,359 +7,252 @@ import { TextItem, PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 
 const errorHandler = ErrorHandler.getInstance();
 
-interface PDFParseOptions {
-  maxPages?: number;
-  timeout?: number;
-  alternativePageLimit?: number;
-}
-
-const DEFAULT_OPTIONS: PDFParseOptions = {
-  maxPages: 1000,
-  timeout: 60000,
-  alternativePageLimit: 50
+// PDF parsing configuration
+const PDF_CONFIG = {
+  // Known working version that exists on CDN
+  WORKER_VERSION: '3.11.174',
+  // CDN URL pattern
+  WORKER_URL: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+  // CMap URL for handling special characters
+  CMAP_URL: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+  // Maximum pages to process for performance
+  MAX_PAGES: 1000,
+  // Processing timeout in milliseconds
+  TIMEOUT: 60000
 };
 
-export interface PDFPage {
-  text: string;
-  pageNumber: number;
-}
-
-// Helper to check if text appears to be PDF structure data rather than actual content
-const isPDFStructureData = (text: string): boolean => {
-  // Check for typical PDF structure markers
-  const pdfMarkers = [
-    '%PDF-',        // PDF header
-    'endobj',       // Object end marker
-    'startxref',    // Cross-reference table
-    '<<',           // Dictionary start
-    '>>',           // Dictionary end
-    '/Filter',      // Common filter indicator
-    '/FlateDecode', // Common compression method
-    '/Length',      // Length indicator
-    'stream',       // Stream marker
-    'endstream'     // End stream marker
-  ];
-  
-  // Only consider it PDF structure if there are multiple markers AND high concentration
-  const markerCount = pdfMarkers.filter(marker => text.includes(marker)).length;
-  
-  // If we find multiple PDF structure markers, it may be raw PDF data
-  if (markerCount >= 5) {
-    // Check for high concentration of non-readable characters
-    const nonReadableChars = text.replace(/[a-zA-Z0-9 \n\r\t.,;:?!()[\]{}\-_+='"]/g, '');
-    const nonReadableRatio = nonReadableChars.length / text.length;
-    
-    // If more than 40% of characters are non-readable, it's likely binary data
-    if (nonReadableRatio > 0.5) {
-      return true;
-    }
-  }
-  
-  // Check if the text is primarily PDF header markers without enough readable content
-  const readableContent = text.replace(/(%PDF-|endobj|startxref|<<|>>|\/\w+|\d+ \d+|\s+)/g, '');
-  if (readableContent.length < text.length * 0.15) {
-    return true;
-  }
-  
-  return false;
-};
-
-// Enhanced text extraction from PDF text content items
-function extractTextFromItems(items: any[]): string {
-  let pageText = '';
-  let currentLine = '';
-  let lastY = -Infinity;
-
-  // Sort items by vertical position (y) then horizontal (x)
-  items.sort((a, b) => {
-    const yDiff = b.transform[5] - a.transform[5];
-    return yDiff !== 0 ? yDiff : a.transform[4] - b.transform[4];
-  });
-
-  for (const item of items) {
-    const y = item.transform[5];
-    const str = item.str.trim();
-    
-    if (!str) continue;
-
-    if (Math.abs(y - lastY) > 5) {
-      pageText += currentLine + '\n';
-      currentLine = str;
-    } else {
-      currentLine += (currentLine ? ' ' : '') + str;
-    }
-    lastY = y;
-  }
-
-  return pageText + currentLine;
-}
-
-// Try an alternative approach to extract text using PDF.js
-async function tryAlternativePDFParsing(file: File, options: PDFParseOptions = DEFAULT_OPTIONS): Promise<string> {
-  console.log('Attempting alternative PDF parsing method...');
-  
-  // Create a fresh ArrayBuffer from the file
-  // This is crucial to avoid the "detached ArrayBuffer" error
-  const freshArrayBuffer = await file.arrayBuffer();
-  
-  // Configure PDF.js with different options
-  const loadingTask = pdfjsLib.getDocument({
-    data: freshArrayBuffer,
-    cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
-    cMapPacked: true,
-    disableRange: false,
-    disableStream: false,
-    disableAutoFetch: false
-  });
-  
-  try {
-    const pdf = await loadingTask.promise as pdfjsLib.PDFDocumentProxy;
-    console.log(`Alternative method: PDF loaded with ${pdf.numPages} pages`);
-    
-    let fullText = '';
-    // Process only a limited number of pages for speed if document is large
-    const pagesToProcess = Math.min(pdf.numPages, options.alternativePageLimit || 50);
-    
-    for (let i = 1; i <= pagesToProcess; i++) {
-      try {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        
-        // Use enhanced text extraction
-        const pageText = extractTextFromItems(content.items);
-        fullText += pageText + '\n\n';
-      } catch (pageError) {
-        console.warn(`Alternative method: Error on page ${i}`, pageError);
-      }
-    }
-    
-    return fullText.trim();
-  } catch (error) {
-    console.error('Alternative PDF parsing method failed:', error);
-    throw error;
-  }
-}
-
-// This function explicitly sets the worker source to match the PDF.js version
-function loadWorker() {
+/**
+ * Configure the PDF.js worker once at the module level
+ */
+function setupPDFWorker(): void {
   if (pdfjsLib.GlobalWorkerOptions.workerSrc) {
-    return; // Worker already set
+    return; // Already configured
   }
-
+  
   try {
-    // Use a specific version that's known to exist on CDN
-    const pdfVersion = '3.11.174'; // Set to known working version
-    console.log(`Setting PDF.js worker with version ${pdfVersion}`);
-    
-    // Use CDN for the worker file with a specific version
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfVersion}/pdf.worker.min.js`;
-    console.log(`Set worker URL: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`);
+    console.log(`Configuring PDF.js worker with version ${PDF_CONFIG.WORKER_VERSION}`);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_CONFIG.WORKER_URL;
+    console.log(`Worker URL set to: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`);
   } catch (error) {
-    console.error('Error setting PDF.js worker:', error);
-    // Fallback to known working version
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    console.log('Using fallback worker URL with version 3.11.174');
+    console.error('Error configuring PDF.js worker:', error);
+    // Redundant fallback in case the first assignment fails
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_CONFIG.WORKER_URL;
   }
 }
 
-function extractTextFromPDFPage(textContent: any): string {
+// Configure the worker immediately when the module loads
+setupPDFWorker();
+
+// Type definition for PDF text items to handle inconsistencies in the API
+interface PDFTextItem {
+  str?: string;
+  text?: string;
+  transform?: number[];
+  y?: number;
+  [key: string]: any;
+}
+
+/**
+ * Extract text from PDF content
+ * @param textContent The text content object from PDF.js
+ * @returns Extracted text string
+ */
+function extractText(textContent: any): string {
   if (!textContent || !textContent.items || !Array.isArray(textContent.items)) {
     return '';
   }
 
-  // Position tracking for better paragraph detection
-  let lastY: number | null = null;
   let text = '';
+  let lastY: number | null = null;
 
-  // Sort items by y position (top to bottom)
-  const sortedItems = [...textContent.items].sort((a, b) => {
-    // Handle different PDF structure formats
-    const aY = a.transform ? a.transform[5] : a.y;
-    const bY = b.transform ? b.transform[5] : b.y;
-    return bY - aY; // Reverse sort (top to bottom)
-  });
+  // Sort items by vertical position (top to bottom)
+  try {
+    const sortedItems = [...textContent.items].sort((a: PDFTextItem, b: PDFTextItem) => {
+      const aY = a.transform ? a.transform[5] : a.y || 0;
+      const bY = b.transform ? b.transform[5] : b.y || 0;
+      return bY - aY; // Top to bottom
+    });
 
-  for (const item of sortedItems) {
-    // Handle different PDF structure formats
-    const str = (item as TextItem).str || item.text || '';
-    const y = item.transform ? item.transform[5] : item.y;
-    
-    // Add a newline if this is a new line/paragraph
-    if (lastY !== null && Math.abs(y - lastY) > 5) {
-      text += '\n';
+    for (const item of sortedItems) {
+      // Handle different PDF structure formats with explicit typing
+      const itemObj = item as PDFTextItem;
+      const str = itemObj.str || itemObj.text || '';
+      const y = itemObj.transform ? itemObj.transform[5] : itemObj.y || 0;
+      
+      // Add newline if we're on a new line
+      if (lastY !== null && Math.abs(y - lastY) > 5) {
+        text += '\n';
+      }
+      
+      text += str + ' ';
+      lastY = y;
     }
+  } catch (error) {
+    console.warn('Error during text extraction, using fallback method:', error);
     
-    text += str + ' ';
-    lastY = y;
+    // Fallback: just concatenate all strings if sorting fails
+    for (const item of textContent.items) {
+      const itemObj = item as PDFTextItem;
+      const str = itemObj.str || itemObj.text || '';
+      if (str) {
+        text += str + ' ';
+      }
+    }
   }
 
   return text.trim();
 }
 
-function isValidContent(text: string): boolean {
-  if (!text || typeof text !== 'string') return false;
-  
-  // Basic content validation
-  if (text.length < 10) return false;
-  
-  // Check for readable content (more than just numbers and symbols)
-  const wordPattern = /[a-zA-Z]{3,}/g;
-  const words = text.match(wordPattern);
-  
-  return words !== null && words.length > 5;
-}
-
-export async function parsePDF(
-  file: File,
-  options: PDFParseOptions = DEFAULT_OPTIONS
-): Promise<string> {
+/**
+ * Main function to parse a PDF file
+ * @param file The PDF file to parse
+ * @returns Promise resolving to the extracted text
+ */
+export async function parsePDF(file: File): Promise<string> {
   try {
-    // Load the worker before processing
-    loadWorker();
+    console.log(`Starting PDF parsing with version ${pdfjsLib.version}`);
     
-    console.log(`Starting PDF parsing with PDF.js version ${pdfjsLib.version}`);
+    // Ensure worker is configured
+    setupPDFWorker();
     
-    // Get the array buffer for the PDF file
-    const arrayBuffer = await file.arrayBuffer();
+    // Create a timeout promise
+    const timeoutPromise = new Promise<string>((_, reject) => {
+      setTimeout(() => reject(new Error('PDF parsing timed out')), PDF_CONFIG.TIMEOUT);
+    });
     
-    try {
-      // Attempt to extract text with primary method
-      console.log('Attempting to extract text using primary method...');
-      
-      // Load the PDF with optimal settings
-      const loadingTask = pdfjsLib.getDocument({
-        data: arrayBuffer,
-        cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-        cMapPacked: true,
-      });
-      
-      const pdf = await loadingTask.promise as PDFDocumentProxy;
-      const totalPages = Math.min(pdf.numPages, options.maxPages || DEFAULT_OPTIONS.maxPages);
-      console.log(`PDF loaded. Processing ${totalPages} pages...`);
-      
-      // Extract text from each page with better error handling
-      let fullText = '';
-      const pages: PDFPage[] = [];
-      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+    // Create the parsing promise
+    const parsingPromise = async (): Promise<string> => {
+      // Try standard approach first
+      try {
+        return await standardParsing(file);
+      } catch (primaryError) {
+        console.warn('Standard parsing failed, trying fallback method:', primaryError);
+        
+        // Try robust fallback if standard parsing fails
         try {
-          console.log(`Processing page ${pageNum}/${totalPages}`);
-          const page = await pdf.getPage(pageNum);
-          
-          const textContent = await page.getTextContent();
-          
-          // Check for valid text content
-          if (!textContent || !textContent.items) {
-            console.warn(`Page ${pageNum} does not contain valid text content`);
-            continue;
-          }
-          
-          const pageText = extractTextFromPDFPage(textContent);
-          fullText += pageText + '\n\n';
-          
-          // Only add non-empty pages
-          if (pageText.trim().length > 0) {
-            pages.push({
-              text: pageText.trim(),
-              pageNumber: pageNum
-            });
-          }
-        } catch (pageError) {
-          console.error(`Error processing page ${pageNum}:`, pageError);
-          errorHandler.handleError(pageError instanceof Error ? pageError : new Error(`Processing error on page ${pageNum}`));
+          return await fallbackParsing(file);
+        } catch (fallbackError) {
+          console.error('Fallback parsing failed:', fallbackError);
+          throw new PDFParsingError('All parsing methods failed. The document may use unsupported features.');
         }
       }
-      
-      // Return the concatenated text from all pages
-      return sanitizeText(fullText.trim());
-      
-    } catch (primaryError) {
-      console.error('Primary PDF parsing method failed:', primaryError);
-      errorHandler.handleError(primaryError instanceof Error ? primaryError : new Error('Primary PDF parsing failed'));
-      
-      // Try alternative approach if primary method fails
-      try {
-        console.log('Attempting to extract text using alternative method...');
-        // Use the existing alternative function
-        const alternativeText = await tryAlternativePDFParsing(file, options);
-        
-        console.log(`Alternative PDF parsing succeeded with ${alternativeText.length} characters`);
-        return sanitizeText(alternativeText.trim());
-      } catch (alternativeError) {
-        console.error('Alternative PDF parsing method failed:', alternativeError);
-        throw new PDFParsingError('All PDF parsing methods failed. The document might be using an unsupported format or encoding.');
-      }
-    }
+    };
+    
+    // Execute parsing with timeout
+    return Promise.race([parsingPromise(), timeoutPromise]);
+    
   } catch (error) {
-    console.error('PDF parsing failed:', error);
+    console.error('PDF parsing error:', error);
     errorHandler.handleError(error instanceof Error ? error : new Error('PDF parsing error'));
     throw new PDFParsingError('Failed to parse PDF. The file may be corrupted or password-protected.');
   }
 }
 
 /**
- * Alternative method to parse a PDF when the primary method fails.
- * Uses a fresh ArrayBuffer and different parsing options.
+ * Standard PDF parsing approach
  */
-export async function alternativeParsePDF(file: File, pageLimit: number = 30): Promise<PDFPage[]> {
-  console.log(`Starting alternative PDF parsing with PDF.js version ${pdfjsLib.version}`);
-  loadWorker();
+async function standardParsing(file: File): Promise<string> {
+  console.log('Attempting standard PDF parsing method...');
   
-  try {
-    // Create a fresh ArrayBuffer (important to avoid detached buffer issues)
-    const arrayBuffer = await file.arrayBuffer();
-    
-    // Different loading options for the alternative approach
-    const loadingTask = pdfjsLib.getDocument({
-      data: arrayBuffer,
-      disableRange: true,
-      disableStream: true,
-      disableAutoFetch: true,
-      cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-      cMapPacked: true,
-    });
-    
-    const pdf = await loadingTask.promise as PDFDocumentProxy;
-    const pageCount = Math.min(pdf.numPages, pageLimit); // Limit page count
-    console.log(`Alternative parsing: PDF loaded. Processing ${pageCount} pages.`);
-    
-    const pages: PDFPage[] = [];
-    
-    for (let i = 1; i <= pageCount; i++) {
-      try {
-        const page = await pdf.getPage(i);
-        
-        // Try with different options
-        const textContent = await page.getTextContent();
-        
-        // Simpler text extraction to avoid structure issues
-        let text = '';
-        if (textContent && textContent.items) {
-          for (const item of textContent.items) {
-            if ('str' in item) {
-              text += (item as any).str + ' ';
-            }
+  // Get fresh array buffer
+  const arrayBuffer = await file.arrayBuffer();
+  
+  // Create loading task with optimal settings
+  const loadingTask = pdfjsLib.getDocument({
+    data: arrayBuffer,
+    cMapUrl: PDF_CONFIG.CMAP_URL,
+    cMapPacked: true
+  });
+  
+  // Load PDF document
+  const pdf = await loadingTask.promise as PDFDocumentProxy;
+  const totalPages = Math.min(pdf.numPages, PDF_CONFIG.MAX_PAGES);
+  console.log(`PDF loaded. Processing ${totalPages} pages...`);
+  
+  // Extract text from all pages
+  let fullText = '';
+  
+  for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+    try {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      
+      const pageText = extractText(textContent);
+      if (pageText.trim()) {
+        fullText += pageText + '\n\n';
+      }
+    } catch (pageError) {
+      console.warn(`Error extracting text from page ${pageNum}:`, pageError);
+      // Continue with next page
+    }
+  }
+  
+  const result = fullText.trim();
+  if (!result) {
+    throw new Error('No text could be extracted using standard method');
+  }
+  
+  return sanitizeText(result);
+}
+
+/**
+ * Fallback PDF parsing approach with different options
+ */
+async function fallbackParsing(file: File): Promise<string> {
+  console.log('Attempting fallback PDF parsing method...');
+  
+  // Get fresh array buffer - critical to avoid detached buffer issues
+  const freshArrayBuffer = await file.arrayBuffer();
+  
+  // Try with different loading options
+  const loadingTask = pdfjsLib.getDocument({
+    data: freshArrayBuffer,
+    disableRange: true,
+    disableStream: true,
+    disableAutoFetch: true,
+    cMapUrl: PDF_CONFIG.CMAP_URL,
+    cMapPacked: true
+  });
+  
+  // Load PDF document
+  const pdf = await loadingTask.promise as PDFDocumentProxy;
+  const pageLimit = Math.min(pdf.numPages, 50); // Process fewer pages for fallback
+  console.log(`Fallback method: Processing ${pageLimit} pages`);
+  
+  // Extract text with simplified approach
+  let fullText = '';
+  
+  for (let pageNum = 1; pageNum <= pageLimit; pageNum++) {
+    try {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      
+      // Simplified text extraction for fallback
+      let pageText = '';
+      if (textContent && textContent.items) {
+        for (const item of textContent.items) {
+          const itemObj = item as PDFTextItem;
+          if (typeof itemObj.str === 'string') {
+            pageText += itemObj.str + ' ';
+          } else if (typeof itemObj.text === 'string') {
+            pageText += itemObj.text + ' ';
           }
         }
-        
-        // Only add non-empty pages
-        if (text.trim().length > 0) {
-          pages.push({
-            text: text.trim(),
-            pageNumber: i
-          });
-        }
-      } catch (error) {
-        console.warn(`Alternative parsing: Error on page ${i}:`, error);
       }
+      
+      if (pageText.trim()) {
+        fullText += pageText.trim() + '\n\n';
+      }
+    } catch (pageError) {
+      console.warn(`Fallback: Error on page ${pageNum}:`, pageError);
+      // Continue with next page
     }
-    
-    if (pages.length === 0) {
-      throw new PDFParsingError('Could not extract any text from the document.');
-    }
-    
-    return pages;
-  } catch (error: any) {
-    console.error('Alternative PDF parsing failed:', error);
-    throw new PDFParsingError('Alternative parsing method failed.');
   }
+  
+  const result = fullText.trim();
+  if (!result) {
+    throw new Error('No text could be extracted with fallback method');
+  }
+  
+  return sanitizeText(result);
 }
