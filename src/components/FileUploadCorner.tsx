@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { IoDocumentText } from 'react-icons/io5';
+import { IoDocumentText, IoAlertCircle } from 'react-icons/io5';
 import { UploadNotification } from './UploadNotification';
 import { ReaderModel } from '../models/reader';
 import { FileRecord } from '../types/common';
@@ -21,7 +21,7 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [notification, setNotification] = useState<{
-    type: 'success' | 'error';
+    type: 'success' | 'error' | 'warning';
     message: string;
   } | null>(null);
   const [recentFiles, setRecentFiles] = useState<FileRecord[]>([]);
@@ -53,6 +53,28 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
     // Reset the file input to allow re-uploading the same file
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  // Fallback method to read text content directly without PDF.js
+  const extractTextWithoutPdfJs = async (file: File): Promise<string> => {
+    try {
+      console.log('Using text extraction fallback method...');
+      // For simplicity, we'll just read the PDF as text
+      // This might not give perfect results but is better than nothing
+      const text = await file.text();
+      
+      // Clean the text - remove binary characters that might appear
+      const cleanedText = text.replace(/[^\x20-\x7E\n\r\t]/g, ' ').trim();
+      
+      if (cleanedText.length < 50) {
+        throw new Error('Could not extract meaningful text from the PDF');
+      }
+      
+      return cleanedText;
+    } catch (error) {
+      console.error('Fallback text extraction failed:', error);
+      throw new Error('Both primary and fallback PDF processing methods failed');
     }
   };
 
@@ -89,23 +111,44 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
         
         try {
           // Add intermediate progress updates to give feedback to the user
-          setTimeout(() => {
-            if (uploadProgress === 10) setUploadProgress(30);
+          const progressTimeout1 = setTimeout(() => {
+            setUploadProgress(prev => prev === 10 ? 30 : prev);
           }, 1000);
           
-          setTimeout(() => {
-            if (uploadProgress === 30) setUploadProgress(50);
+          const progressTimeout2 = setTimeout(() => {
+            setUploadProgress(prev => prev === 30 ? 50 : prev);
           }, 2000);
           
-          text = await parsePDF(file);
-          setUploadProgress(90);
-        } catch (pdfError) {
-          console.error('PDF parsing error:', pdfError);
-          if (pdfError instanceof Error) {
-            throw pdfError;
-          } else {
-            throw new Error('Failed to parse PDF file. The file might be corrupted or password protected.');
+          // Try parsing with PDF.js
+          try {
+            text = await parsePDF(file);
+            // Clear timeouts if successful
+            clearTimeout(progressTimeout1);
+            clearTimeout(progressTimeout2);
+            
+            setUploadProgress(90);
+          } catch (pdfJsError) {
+            // Clear timeouts on error
+            clearTimeout(progressTimeout1);
+            clearTimeout(progressTimeout2);
+            
+            console.error('Primary PDF parsing failed, trying fallback method:', pdfJsError);
+            
+            // Let the user know we're using a fallback method
+            setNotification({
+              type: 'warning',
+              message: 'PDF processing issues detected, using fallback method...'
+            });
+            
+            setUploadProgress(60);
+            
+            // Try fallback method
+            text = await extractTextWithoutPdfJs(file);
+            setUploadProgress(90);
           }
+        } catch (finalError) {
+          console.error('All PDF parsing methods failed:', finalError);
+          throw new Error('Unable to process this PDF file. It might be corrupted or incompatible.');
         }
       } else {
         // Handle as text file

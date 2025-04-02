@@ -1,9 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { IoCheckmarkCircle, IoCloseCircle } from 'react-icons/io5';
+import { IoCheckmarkCircle, IoCloseCircle, IoAlertCircle } from 'react-icons/io5';
 
 interface UploadNotificationProps {
-  type: 'success' | 'error';
+  type: 'success' | 'error' | 'warning';
   message: string;
   onClose: () => void;
   colorScheme: {
@@ -18,6 +18,34 @@ export function UploadNotification({ type, message, onClose, colorScheme }: Uplo
     const timer = setTimeout(onClose, 5000);
     return () => clearTimeout(timer);
   }, [onClose]);
+
+  // Get the color based on notification type
+  const getNotificationColor = () => {
+    switch (type) {
+      case 'success':
+        return '#22c55e'; // green
+      case 'error':
+        return '#ef4444'; // red
+      case 'warning':
+        return '#f59e0b'; // amber/yellow
+      default:
+        return colorScheme.highlight;
+    }
+  };
+
+  // Get the icon based on notification type
+  const NotificationIcon = () => {
+    switch (type) {
+      case 'success':
+        return <IoCheckmarkCircle className="text-green-500" size={24} />;
+      case 'error':
+        return <IoCloseCircle className="text-red-500" size={24} />;
+      case 'warning':
+        return <IoAlertCircle className="text-amber-500" size={24} />;
+      default:
+        return null;
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -40,18 +68,12 @@ export function UploadNotification({ type, message, onClose, colorScheme }: Uplo
           <motion.div
             className="absolute inset-0 rounded-2xl"
             style={{
-              background: `radial-gradient(circle at top left, ${
-                type === 'success' ? '#22c55e0A' : '#ef44440A'
-              }, transparent)`,
+              background: `radial-gradient(circle at top left, ${getNotificationColor()}0A, transparent)`,
             }}
           />
           
           <div className="relative z-10">
-            {type === 'success' ? (
-              <IoCheckmarkCircle className="text-green-500" size={24} />
-            ) : (
-              <IoCloseCircle className="text-red-500" size={24} />
-            )}
+            <NotificationIcon />
           </div>
           
           <div className="relative z-10 flex-grow">

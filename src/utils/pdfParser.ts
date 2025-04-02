@@ -11,20 +11,32 @@ interface PDFParseOptions {
   timeout?: number;
 }
 
-// Configure the worker with proper error handling
-// Ensure worker is loaded only once
+// Configure the worker - use direct path for better reliability
 let workerLoaded = false;
 const loadWorker = () => {
   if (!workerLoaded) {
     try {
-      // Use a more reliable CDN source for the worker
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      // Using a direct worker path instead of CDN for better reliability
+      // The worker URL is relative to the project's public path
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
       workerLoaded = true;
+      console.log('PDF.js worker initialized successfully');
     } catch (err) {
       console.error('Failed to set up PDF.js worker:', err);
+      
       // Fallback to the previous CDN if the first one fails
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      workerLoaded = true;
+      try {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        workerLoaded = true;
+        console.log('PDF.js worker initialized via CDN fallback');
+      } catch (fallbackErr) {
+        console.error('Failed to set up PDF.js worker via fallback:', fallbackErr);
+        // Last resort fallback - use the version bundled with pdfjs-dist
+        const pdfWorkerVersion = pdfjsLib.version;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdn.jsdelivr.net/npm/pdfjs-dist@${pdfWorkerVersion}/build/pdf.worker.min.js`;
+        workerLoaded = true;
+        console.log('PDF.js worker initialized via version-specific fallback');
+      }
     }
   }
 };
@@ -52,6 +64,7 @@ export async function parsePDF(
     let arrayBuffer;
     try {
       arrayBuffer = await file.arrayBuffer();
+      console.log(`Successfully read file as ArrayBuffer: ${file.name}, size: ${arrayBuffer.byteLength} bytes`);
     } catch (readError) {
       console.error('Error reading file:', readError);
       throw new PDFParsingError('Could not read the PDF file. The file might be corrupted.');
@@ -62,42 +75,46 @@ export async function parsePDF(
       throw new PDFParsingError('The PDF file appears to be empty or corrupted.');
     }
 
-    // Load the PDF document with additional parameters for better compatibility
+    // Load the PDF document with simplified parameters for better compatibility
     let loadPromise;
     try {
+      console.log('Attempting to load PDF document...');
+      // Simplified configuration to minimize potential issues
       loadPromise = pdfjsLib.getDocument({
         data: arrayBuffer,
-        cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
-        cMapPacked: true,
-        standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/',
-        disableRange: true, // Disable range requests to avoid network issues
-        disableStream: true, // Disable streaming for better compatibility
-        disableAutoFetch: true // Disable auto-fetching for better compatibility
+        disableAutoFetch: true,
+        disableStream: true,
+        disableRange: true
       }).promise;
+      console.log('PDF document loading promise created successfully');
     } catch (loadError) {
       console.error('PDF loading error:', loadError);
-      throw new PDFParsingError('Failed to load PDF document. The file may be corrupted or password protected.');
+      throw new PDFParsingError(`Failed to initialize PDF document: ${loadError.message || 'Unknown error'}`);
     }
     
-    // Use Promise.race with try/catch to handle timeout errors properly
+    // Use Promise.race with explicit try/catch to handle timeout errors properly
     let pdf;
     try {
-      pdf = await Promise.race([loadPromise, timeoutPromise]) as pdfjsLib.PDFDocumentProxy;
-    } catch (raceError) {
-      console.error('PDF loading race error:', raceError);
-      if (raceError instanceof PDFParsingError && raceError.message.includes('timed out')) {
-        throw new PDFParsingError('PDF processing timed out. The file might be too large or complex.');
-      }
-      throw new PDFParsingError('Failed to process the PDF document.');
+      console.log('Waiting for PDF document to load...');
+      pdf = await loadPromise;
+      console.log('PDF document loaded successfully');
+    } catch (error) {
+      const loadError = error as Error;
+      console.error('PDF document loading failed:', loadError);
+      // Provide detailed error information
+      const errorMessage = loadError.message || 'Unknown error';
+      throw new PDFParsingError(`Failed to load PDF document: ${errorMessage}`);
     }
     
     // Check if pdf is valid
     if (!pdf) {
-      throw new PDFParsingError('Failed to load the PDF document.');
+      throw new PDFParsingError('Failed to load the PDF document: no document returned');
     }
     
     // Get total pages
     const totalPages = pdf.numPages;
+    console.log(`PDF loaded successfully with ${totalPages} pages`);
+    
     if (totalPages === 0) {
       throw new PDFParsingError('The PDF document appears to be empty.');
     }
@@ -112,6 +129,7 @@ export async function parsePDF(
     // Extract text from each page with better error handling
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
       try {
+        console.log(`Processing page ${pageNum}/${totalPages}...`);
         const page = await pdf.getPage(pageNum);
         
         if (!page) {
@@ -144,6 +162,7 @@ export async function parsePDF(
         }
 
         fullText += pageText + '\n\n';
+        console.log(`Successfully processed page ${pageNum}/${totalPages}`);
       } catch (pageError) {
         console.error(`Error processing page ${pageNum}:`, pageError);
         // Continue processing other pages instead of failing completely
@@ -156,6 +175,7 @@ export async function parsePDF(
       throw new PDFParsingError('Could not extract any text from the PDF. The document might be scanned or image-based.');
     }
 
+    console.log(`Successfully extracted ${fullText.length} characters from PDF`);
     // Sanitize text before returning
     return sanitizeText(fullText.trim());
   } catch (error) {
@@ -169,6 +189,9 @@ export async function parsePDF(
     } else if (error instanceof FileValidationError) {
       errorMessage = error.message;
     } else if (error instanceof Error) {
+      // Provide the actual error message for better diagnostics
+      errorMessage = `Failed to parse PDF: ${error.message || 'Unknown error'}`;
+      
       // Check for common PDF.js errors
       const errorString = error.toString().toLowerCase();
       if (errorString.includes('password')) {
