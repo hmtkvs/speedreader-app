@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { AppErrorBoundary } from './ErrorBoundary'
 import { initializeMonitoring } from './monitoring'
-import App from './App'
+import AppWithProviders from './features/app'
 import { LandingPage } from './components/LandingPage'
 import './index.css'
 
@@ -14,7 +14,7 @@ function Main() {
   
   return showApp ? (
     <AppErrorBoundary>
-      <App />
+      <AppWithProviders />
     </AppErrorBoundary>
   ) : (
     <LandingPage onGetStarted={() => setShowApp(true)} />
