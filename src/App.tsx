@@ -1,28 +1,35 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ReaderModel } from './models/reader';
+import { ReaderContainer, FullscreenReader, InlineReader, ReaderSettingsModal, useReader, ReaderProvider } from './features/reader';
+import { TTSSettingsAdapter } from './features/reader/components/TTSSettingsAdapter';
 import { SubscriptionService } from './utils/subscription';
 import { IoPlaySharp, IoPauseSharp } from 'react-icons/io5';
 import { BiSkipPrevious, BiSkipNext } from 'react-icons/bi';
 import { IoChevronUpOutline, IoChevronDownOutline, IoMenu, IoExpand, IoStatsChart, IoTime } from 'react-icons/io5';
 import { IoSettingsOutline, IoVolumeHigh, IoVolumeMute } from 'react-icons/io5';
 import { MdContentPaste } from 'react-icons/md';
-import { COLOR_SCHEMES, Translation } from './models/types';
+import { COLOR_SCHEMES, Translation, ColorScheme as ModelColorScheme } from './models/types';
 import { TranslationService } from './utils/translation';
-import { FileUploadCorner } from './components/FileUploadCorner';
-import { FullscreenReader } from './components/FullscreenReader';
+import { FileUploadCornerAdapter } from './components/FileUploadCornerAdapter';
 import { LandingPage } from './components/LandingPage';
-import { PDFManager } from './components/PDFManager';
-import { SavedPDFsPanel } from './components/SavedPDFsPanel';
+import { PDFManagerAdapter, SavedPDFsPanelAdapter } from './features/pdf-management';
 import { StatisticsService } from './utils/statistics';
 import { StatsPanel } from './components/StatsPanel';
 import { SlideIndicator } from './components/SlideIndicator';
 import { TranslationTooltip } from './components/TranslationTooltip';
-import { TTSSettings } from './components/TTSSettings';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { initializeMonitoring } from './monitoring';
 import { DatabaseService } from './utils/database';
 import { SettingsModal } from './components/SettingsModal';
-import { ColorScheme } from './types/common';
+import { SimplifiedReaderModel } from './types/simplified';
+
+// App wrapper to provide reader context
+const AppWithReaderProvider = () => {
+  return (
+    <ReaderProvider>
+      <App />
+    </ReaderProvider>
+  );
+};
 
 function App() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
@@ -34,6 +41,43 @@ function App() {
     subscriptionDaysLeft: number | null;
   }>({ hasAccess: false, trialDaysLeft: null, subscriptionDaysLeft: null });
 
+  const [colorScheme, setColorScheme] = useState<ModelColorScheme>({
+    ...COLOR_SCHEMES[0],
+    highlight: COLOR_SCHEMES[0].highlight || '#FF3B30'  // Ensure highlight is always defined
+  });
+  
+  // Use the reader hook from the Reader feature
+  const { 
+    currentWords, 
+    isPlaying, 
+    settings, 
+    progress,
+    play, 
+    pause, 
+    forward, 
+    rewind, 
+    updateSettings, 
+    setText 
+  } = useReader();
+  
+  // Create a simplified reader model for adapters that still need it
+  const [reader] = useState<SimplifiedReaderModel>({ 
+    addBook: async (text: string, name: string) => Promise.resolve(name),
+    loadBook: async (id: string) => Promise.resolve(true),
+    rewind: () => rewind(),
+    forward: () => forward(),
+    setText: (text: string) => setText(text),
+    play: () => play(),
+    pause: () => pause(),
+    setTTSVoice: (voiceId: string) => updateSettings({ ttsVoice: voiceId }),
+    wpm: settings.wpm
+  });
+  
+  const [useTTS, setUseTTS] = useState(settings.ttsEnabled);
+  const [showColorSchemes, setShowColorSchemes] = useState(false);
+  const [showReaderSettings, setShowReaderSettings] = useState(false);
+  const [showTTSSettings, setShowTTSSettings] = useState(false);
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 640);
@@ -42,6 +86,12 @@ function App() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Set sample text when the app loads
+  useEffect(() => {
+    // Sample text to demonstrate the reader functionality
+    setText("Welcome to the Speed Reader application. This is a sample text to demonstrate how the reader works. You can upload your own PDFs or paste text from clipboard. Click any word to see its translation. Use the controls at the bottom to adjust reading speed and settings.");
+  }, [setText]);
 
   useEffect(() => {
     const subscription = SubscriptionService.getInstance();
@@ -83,20 +133,6 @@ function App() {
     }
   };
 
-  const [reader] = useState(() => new ReaderModel());
-  const [currentWords, setCurrentWords] = useState([{ before: '', highlight: '', after: '' }]);
-  const [readText, setReadText] = useState('');
-  const [unreadText, setUnreadText] = useState('');
-  const [progress, setProgress] = useState(0);
-  const [timeRemaining, setTimeRemaining] = useState('0:00');
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [wpm, setWpm] = useState(300);
-  const [fontSize, setFontSize] = useState(60);
-  const [colorScheme, setColorScheme] = useState(COLOR_SCHEMES[0]);
-  const [wordsAtTime, setWordsAtTime] = useState(2);
-  const [showColorSchemes, setShowColorSchemes] = useState(false);
-  const [useTTS, setUseTTS] = useState(false);
-  const [showTTSSettings, setShowTTSSettings] = useState(false);
   const [selectedWord, setSelectedWord] = useState<string | null>(null);
   const [translation, setTranslation] = useState<Translation | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
@@ -104,86 +140,15 @@ function App() {
   const [showPDFManager, setShowPDFManager] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [stats, setStats] = useState(() => StatisticsService.getInstance().getReadingStats());
-  const [lastAdjustTime, setLastAdjustTime] = useState({ wpm: 0, words: 0, font: 0 });
-
-  useEffect(() => {
-    const handleUpdate = () => {
-      setCurrentWords(reader.currentWords);
-      setReadText(reader.readText);
-      setUnreadText(reader.unreadText);
-      setProgress(reader.progress);
-      setTimeRemaining(reader.timeRemaining);
-      setIsPlaying(reader.isPlaying);
-      setWpm(reader.wpm);
-      setWordsAtTime(reader.wordsAtTime);
-      setColorScheme(reader.colorScheme);
-    };
-
-    reader.on('propertyChange', handleUpdate);
-    reader.setText("Welcome to Speed Reader! Tap the play button to start reading at your own pace. You can adjust the speed using the controls above.");
-    
-    // Initialize TTS state
-    setUseTTS(reader.useTTS);
-
-    return () => {
-      reader.off('propertyChange', handleUpdate);
-    };
-  }, [reader]);
 
   const handlePaste = useCallback(async () => {
     try {
       const text = await navigator.clipboard.readText();
-      reader.setText(text);
+      setText(text);
     } catch (err) {
       console.error('Failed to read clipboard:', err);
     }
-  }, [reader]);
-
-  const adjustWpm = (increment: boolean) => {
-    const step = 25;
-    const newWpm = increment ? wpm + step : wpm - step;
-    if (newWpm >= 100 && newWpm <= 1000) {
-      setWpm(newWpm);
-      reader.wpm = newWpm;
-    }
-  };
-
-  const adjustWordsAtTime = (increment: boolean) => {
-    const newValue = increment ? wordsAtTime + 1 : wordsAtTime - 1;
-    if (newValue >= 1 && newValue <= 5) {
-      setWordsAtTime(newValue);
-      reader.wordsAtTime = newValue;
-    }
-  };
-
-  const adjustFontSize = (increment: boolean) => {
-    // Remove throttling
-    const step = 4;
-    const newSize = increment ? fontSize + step : fontSize - step;
-    if (newSize >= 32 && newSize <= 96) {
-      setFontSize(newSize);
-    }
-  };
-
-  const handleColorSchemeChange = (scheme: typeof COLOR_SCHEMES[0]) => {
-    setColorScheme(scheme);
-    reader.colorScheme = scheme;
-  };
-
-  const handleHighlightColorChange = (color: string) => {
-    reader.setHighlightColor(color);
-    setColorScheme(prev => ({ ...prev, highlight: color }));
-  };
-
-  const handleFontChange = (fontFamily: string) => {
-    reader.setFont(fontFamily);
-    setColorScheme(prev => ({ ...prev, font: fontFamily }));
-  };
-
-  const handlePDFSelection = (pdfId: string, pdfContent: string) => {
-    reader.setText(pdfContent);
-    setShowPDFManager(false);
-  };
+  }, [setText]);
 
   const handleWordClick = (word: string, event: React.MouseEvent) => {
     event.stopPropagation();
@@ -191,7 +156,7 @@ function App() {
     
     // Pause reading when clicking a word
     if (isPlaying) {
-      reader.pause();
+      pause();
     }
     
     setSelectedWord(word);
@@ -210,23 +175,12 @@ function App() {
     });
   };
 
-  const toggleTTS = () => {
-    const newValue = !useTTS;
-    setUseTTS(newValue);
-    reader.useTTS = newValue;
-    
-    // Show TTS settings when enabling
-    if (newValue && !showTTSSettings) {
-      setShowTTSSettings(true);
-    }
-  };
-
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (!(event.target as HTMLElement).closest('.clickable-word')) {
         // Resume reading if it was playing before clicking a word
         if (selectedWord && isPlaying) {
-          reader.play();
+          play();
         }
         setSelectedWord(null);
         setTranslation(null);
@@ -236,195 +190,158 @@ function App() {
 
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, [selectedWord, isPlaying, reader]);
+  }, [selectedWord, isPlaying, play]);
 
+  const handlePDFSelection = (pdfId: string, content: string) => {
+    if (pdfId && content) {
+      // Pass the text to the reader
+      console.log(`Selected PDF: ${pdfId}, content length: ${content.length}`);
+      setText(content);
+      setShowPDFManager(false);
+    } else {
+      console.error('Invalid PDF selection');
+    }
+  };
+
+  // Handlers for settings
+  const toggleTTS = () => {
+    const newTTSEnabled = !useTTS;
+    setUseTTS(newTTSEnabled);
+    updateSettings({ ttsEnabled: newTTSEnabled });
+  };
+  
+  const handleHighlightColorChange = (highlight: string) => {
+    setColorScheme({...colorScheme, highlight});
+    // Also update reader settings color scheme
+    updateSettings({ 
+      colorScheme: { 
+        ...settings.colorScheme, 
+        highlight 
+      } 
+    });
+  };
+  
+  const handleFontChange = (font: string) => {
+    setColorScheme({...colorScheme, font});
+  };
+  
+  const handleColorSchemeChange = (scheme: ModelColorScheme) => {
+    setColorScheme(scheme);
+    // Also update reader settings color scheme
+    updateSettings({ 
+      colorScheme: { 
+        background: scheme.background,
+        text: scheme.text,
+        highlight: scheme.highlight || '#FF3B30'
+      } 
+    });
+  };
+
+  // Handle button clicks that need to call reader methods
+  const handleRewindClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    rewind();
+  };
+  
+  const handleForwardClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    forward();
+  };
+
+  // Render
   return (
     <div 
       className="min-h-screen"
       style={{ 
-        background: colorScheme.background,
-        color: colorScheme.text
+        backgroundColor: colorScheme.background,
+        color: colorScheme.text,
       }}
     >
-      <div className="p-4 flex flex-col h-screen">
-        {/* Subscription Status */}
-        {(subscriptionInfo.trialDaysLeft !== null || subscriptionInfo.subscriptionDaysLeft !== null) && (
-          <div className="fixed right-4 top-4 z-40">
-            <div 
-              className="px-4 py-2 rounded-xl relative"
-              style={{ 
-                background: `linear-gradient(135deg, ${colorScheme.background}E6, ${colorScheme.background}99)`,
-                boxShadow: `0 8px 32px -4px ${colorScheme.text}1A`
-              }}
-            >
-              <span className="relative z-10">
-                {subscriptionInfo.trialDaysLeft !== null
-                  ? `Trial: ${subscriptionInfo.trialDaysLeft} days left`
-                  : `Pro: ${subscriptionInfo.subscriptionDaysLeft} days left`
-                }
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Settings Bar */}
-        <div className="flex justify-end items-center mb-8 text-sm">
-          <div 
-            className="flex items-center gap-10 p-5 rounded-2xl relative backdrop-blur-md select-none"
-            style={{ 
-              background: `linear-gradient(135deg, ${colorScheme.background}E6, ${colorScheme.background}99)`,
-              boxShadow: `0 10px 32px -4px ${colorScheme.text}22`,
-              zIndex: 50,
-              fontSize: `${Math.min(16, Math.max(12, window.innerWidth / 50))}px`
-            }}
-          >
-            <div
-              className="absolute inset-0 rounded-2xl"
-              style={{
-                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
-              }}
-            />
-            {/* WPM Control */}
-            <div className="flex flex-col items-center gap-2 select-none">
-              <button 
-                onClick={() => adjustWpm(true)}
-                style={{
-                  width: '50px',
-                  height: '50px',
-                  background: 'rgba(255,255,255,0.2)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '24px',
-                  cursor: 'pointer',
-                  color: 'inherit'
-                }}
-              >
-                ↑
-              </button>
-              <div className="flex items-center gap-0.5 text-sm sm:text-base whitespace-nowrap font-medium select-none">
-                <span>{isMobile ? 'W' : 'WPM'}</span>
-                <span className="opacity-100 tabular-nums">{wpm}×{wordsAtTime}</span>
-              </div>
-              <button 
-                onClick={() => adjustWpm(false)}
-                style={{
-                  width: '50px',
-                  height: '50px',
-                  background: 'rgba(255,255,255,0.2)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '24px',
-                  cursor: 'pointer',
-                  color: 'inherit'
-                }}
-              >
-                ↓
-              </button>
-            </div>
-
-            {/* Words at a time */}
-            <div className="flex flex-col items-center gap-2 select-none">
-              <button 
-                onClick={() => adjustWordsAtTime(true)}
-                style={{
-                  width: '50px',
-                  height: '50px',
-                  background: 'rgba(255,255,255,0.2)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '24px',
-                  cursor: 'pointer',
-                  color: 'inherit'
-                }}
-              >
-                ↑
-              </button>
-              <div className="flex items-center gap-0.5 text-sm sm:text-base whitespace-nowrap font-medium select-none">
-                <span>{isMobile ? '×' : 'Words'}</span>
-                <span className="opacity-100 tabular-nums">{wordsAtTime}</span>
-              </div>
-              <button 
-                onClick={() => adjustWordsAtTime(false)}
-                style={{
-                  width: '50px',
-                  height: '50px',
-                  background: 'rgba(255,255,255,0.2)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '24px',
-                  cursor: 'pointer',
-                  color: 'inherit'
-                }}
-              >
-                ↓
-              </button>
-            </div>
-
-            {/* Font size */}
-            <div className="flex flex-col items-center gap-2 select-none">
-              <button 
-                onClick={() => adjustFontSize(true)}
-                style={{
-                  width: '50px',
-                  height: '50px',
-                  background: 'rgba(255,255,255,0.2)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '24px',
-                  cursor: 'pointer',
-                  color: 'inherit'
-                }}
-              >
-                ↑
-              </button>
-              <div className="flex items-center gap-0.5 text-sm sm:text-base whitespace-nowrap font-medium select-none">
-                <span>{isMobile ? 'F' : 'Font'}</span>
-                <span className="opacity-100 tabular-nums">{fontSize}</span>
-              </div>
-              <button 
-                onClick={() => adjustFontSize(false)}
-                style={{
-                  width: '50px',
-                  height: '50px',
-                  background: 'rgba(255,255,255,0.2)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '24px',
-                  cursor: 'pointer',
-                  color: 'inherit'
-                }}
-              >
-                ↓
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Main content */}
+      <div className="min-h-screen flex flex-col">
+        {/* PDF Management - Corner Upload and Sidebar only */}
+        {/* Upload Corner */}
+        <FileUploadCornerAdapter
+          colorScheme={{
+            background: colorScheme.background,
+            text: colorScheme.text,
+            highlight: colorScheme.highlight || '#FF3B30'
+          }}
+          reader={reader as any}
+        />
         
-        {/* Time Remaining */}
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40">
-          <div 
-            className="px-4 py-2 rounded-xl relative flex items-center gap-2"
-            style={{ 
-              background: `linear-gradient(135deg, ${colorScheme.background}E6, ${colorScheme.background}99)`,
-              boxShadow: `0 8px 32px -4px ${colorScheme.text}1A`
+        {/* Saved PDFs Panel */}
+        <SavedPDFsPanelAdapter
+          isOpen={showSavedPDFs} 
+          onClose={() => setShowSavedPDFs(false)}
+          reader={reader}
+          colorScheme={{
+            background: colorScheme.background,
+            text: colorScheme.text,
+            highlight: colorScheme.highlight || '#FF3B30'
+          }}
+        />
+        
+        {/* Stats Panel */}
+        <StatsPanel 
+          isOpen={showStats}
+          onClose={() => setShowStats(false)}
+          stats={stats}
+          colorScheme={{
+            background: colorScheme.background,
+            text: colorScheme.text,
+            highlight: colorScheme.highlight || '#FF3B30'
+          }}
+        />
+        
+        {/* Subscription Modal */}
+        <SubscriptionModal
+          isOpen={showSubscription}
+          onClose={() => setShowSubscription(false)}
+          onSubscribe={handleSubscribe}
+          colorScheme={{
+            background: colorScheme.background,
+            text: colorScheme.text,
+            highlight: colorScheme.highlight || '#FF3B30'
+          }}
+          trialDaysLeft={subscriptionInfo.trialDaysLeft}
+        />
+        
+        {/* Translation tooltip */}
+        {selectedWord && translation && tooltipPosition && (
+          <TranslationTooltip
+            word={selectedWord}
+            translation={translation}
+            position={tooltipPosition}
+            colorScheme={{
+              background: colorScheme.background,
+              text: colorScheme.text,
+              highlight: colorScheme.highlight || '#FF3B30'
             }}
-          >
-            <div
-              className="absolute inset-0 rounded-xl"
-              style={{
-                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
-              }}
-            />
-            <IoTime size={16} className="relative z-10 opacity-60" />
-            <span className="relative z-10 text-sm">
-              <span className="opacity-60">remaining: </span>
-              <span className="tabular-nums">{timeRemaining}</span>
-            </span>
-          </div>
-        </div>
-
-        {/* Menu Button */}
-        {!isMobile && (
+          />
+        )}
+        
+        {/* Fullscreen Reader */}
+        <FullscreenReader
+          isOpen={isFullscreen}
+          onClose={() => setIsFullscreen(false)}
+          currentWords={currentWords}
+          isPlaying={isPlaying}
+          onPlay={play}
+          onPause={pause}
+          onForward={forward}
+          onRewind={rewind}
+          colorScheme={{
+            background: colorScheme.background,
+            text: colorScheme.text,
+            highlight: colorScheme.highlight || '#FF3B30'
+          }}
+          fontSize={settings.fontSize}
+          onWordClick={handleWordClick}
+        />
+        
+        {/* Mobile menu button */}
+        {isMobile && (
           <button
             onClick={() => setShowSavedPDFs(true)}
             className="fixed left-4 top-1/2 -translate-y-1/2 z-40
@@ -442,7 +359,7 @@ function App() {
             w-10 h-10 rounded-xl flex items-center justify-center
             hover:bg-current/10 transition-colors"
           style={{ 
-            color: colorScheme.text
+            color: COLOR_SCHEMES[0].text
           }}
         >
           <IoStatsChart size={24} />
@@ -450,70 +367,46 @@ function App() {
         
         {/* Main Reading Area */}
         <div className="flex-grow flex flex-col items-center justify-center px-4 overflow-hidden" 
-          style={{ color: colorScheme.text }}>
-          {/* Read Text */}
-          <div className="text-sm opacity-50 mb-8 w-full max-w-2xl text-center line-clamp-2 overflow-hidden">
-            {readText.split(' ').map((word, index) => (
-              <span
-                key={index}
-                onClick={(e) => handleWordClick(word, e)}
-                className="clickable-word inline-block mx-0.5 cursor-pointer hover:opacity-80 transition-opacity"
-              >
-                {word}
-              </span>
-            ))}
-          </div>
-
-          {/* Current Words */}
-          <div className="mb-8 font-serif flex justify-center gap-4 w-full max-w-[90vw] md:max-w-2xl overflow-hidden whitespace-nowrap">
-            {currentWords.map((word, index) => (
-              <div
-                key={index}
-                onClick={(e) => handleWordClick(word.before + word.highlight + word.after, e)}
-                className="clickable-word cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
-                style={{ 
-                  fontFamily: colorScheme.font,
-                  fontSize: `${Math.min(
-                    fontSize, 
-                    Math.min(
-                      window.innerWidth / (wordsAtTime * Math.max(4, Math.max(...currentWords.map(w => 
-                        (w.before + w.highlight + w.after).length
-                      )) / 2)),
-                      window.innerHeight / 4
-                    )
-                  )}px`,
-                  maxWidth: '100%'
-                }}
-              >
-                <span>{word.before}</span>
-                <span style={{ color: colorScheme.highlight || '#FF3B30' }}>{word.highlight}</span>
-                <span>{word.after}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Unread Text */}
-          <div className="text-sm opacity-40 mt-4 w-full max-w-2xl text-center line-clamp-2 overflow-hidden">
-            {unreadText.split(' ').map((word, index) => (
-              <span
-                key={index}
-                onClick={(e) => handleWordClick(word, e)}
-                className="clickable-word inline-block mx-0.5 cursor-pointer hover:opacity-80 transition-opacity"
-              >
-                {word}
-              </span>
-            ))}
-          </div>
-
-          <div className="w-full rounded-full h-1 mt-8 opacity-20">
-            <div
-              className="h-1 rounded-full transition-all duration-200"
-              onClick={() => setIsFullscreen(true)}
-              style={{ 
-                width: `${progress}%`,
-                background: colorScheme.highlight || '#FF3B30'
-              }}
-            />
+          style={{ color: COLOR_SCHEMES[0].text }}>
+          
+          {/* Display mock text instead of reader controls */}
+          <div className="w-full max-w-3xl mx-auto text-center p-8 rounded-xl" 
+            style={{ 
+              backgroundColor: `${colorScheme.background}AA`,
+              boxShadow: `0 8px 32px -4px ${colorScheme.text}1A`
+            }}>
+            <div className="mb-8 text-lg">
+              {currentWords.length > 0 ? (
+                <>
+                  <div className="font-serif text-xl">
+                    {currentWords.map((word, index) => (
+                      <span 
+                        key={index}
+                        className="clickable-word inline-block mx-1 cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={(e) => handleWordClick(word.before + word.highlight + word.after, e)}
+                      >
+                        <span>{word.before}</span>
+                        <span style={{ color: colorScheme.highlight, fontWeight: 'bold' }}>{word.highlight}</span>
+                        <span>{word.after}</span>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-6 flex items-center justify-center text-sm opacity-70">
+                    <IoTime className="mr-2" />
+                    <span>Reading progress: {Math.round(progress * 100)}%</span>
+                    <span className="mx-2">•</span>
+                    <span>Speed: {settings.wpm} WPM</span>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center opacity-80">
+                  <p className="mb-4">Welcome to the Speed Reader App</p>
+                  <p className="mb-4">Upload a PDF using the top-left corner button</p>
+                  <p className="mb-4">Or paste text using the button below</p>
+                  <p>Use the fullscreen button for a distraction-free reading experience</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -552,7 +445,25 @@ function App() {
             {useTTS ? <IoVolumeHigh size={24} /> : <IoVolumeMute size={24} />}
           </button>
           <button
-            onClick={() => setShowColorSchemes(true)}
+            onClick={() => setShowTTSSettings(true)}
+            className="w-16 h-16 rounded-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all duration-300"
+            style={{ 
+              background: `linear-gradient(135deg, ${colorScheme.background}E6, ${colorScheme.background}99)`,
+              boxShadow: `0 8px 32px -4px ${colorScheme.text}1A`
+            }}
+            title="TTS Settings"
+          >
+            <div
+              className="absolute inset-0 rounded-2xl"
+              style={{
+                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
+              }}
+            />
+            <IoVolumeHigh size={20} />
+            <span className="absolute text-[10px] font-bold" style={{ bottom: '8px' }}>SET</span>
+          </button>
+          <button
+            onClick={() => setShowReaderSettings(true)}
             className="w-16 h-16 rounded-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all duration-300"
             style={{ 
               background: `linear-gradient(135deg, ${colorScheme.background}E6, ${colorScheme.background}99)`,
@@ -567,6 +478,32 @@ function App() {
             />
             <IoSettingsOutline size={24} />
           </button>
+          
+          {/* Color scheme button */}
+          <button
+            onClick={() => setShowColorSchemes(true)}
+            className="w-16 h-16 rounded-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all duration-300"
+            style={{ 
+              background: `linear-gradient(135deg, ${colorScheme.background}E6, ${colorScheme.background}99)`,
+              boxShadow: `0 8px 32px -4px ${colorScheme.text}1A`
+            }}
+            title="Appearance Settings"
+          >
+            <div
+              className="absolute inset-0 rounded-2xl"
+              style={{
+                background: `radial-gradient(circle at top left, ${colorScheme.highlight || '#FF3B30'}0A, transparent)`,
+              }}
+            />
+            <div 
+              className="w-6 h-6 rounded-full" 
+              style={{
+                background: `conic-gradient(${colorScheme.highlight}, #FF9500, #34C759, #5856D6, #007AFF, ${colorScheme.highlight})`,
+                border: '2px solid white'
+              }}
+            />
+          </button>
+          
           <button
             onClick={handlePaste}
             className="w-16 h-16 rounded-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all duration-300"
@@ -584,7 +521,7 @@ function App() {
             <MdContentPaste size={24} />
           </button>
           <button
-            onClick={() => reader.rewind()}
+            onClick={handleRewindClick}
             className="w-16 h-16 rounded-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all duration-300"
             style={{ 
               background: `linear-gradient(135deg, ${colorScheme.background}E6, ${colorScheme.background}99)`,
@@ -600,7 +537,7 @@ function App() {
             <BiSkipPrevious size={24} />
           </button>
           <button
-            onClick={() => isPlaying ? reader.pause() : reader.play()}
+            onClick={() => isPlaying ? pause() : play()}
             className="w-16 h-16 rounded-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all duration-300"
             style={{ 
               background: `linear-gradient(135deg, ${colorScheme.background}E6, ${colorScheme.background}99)`,
@@ -616,7 +553,7 @@ function App() {
             {isPlaying ? <IoPauseSharp size={24} /> : <IoPlaySharp size={24} />}
           </button>
           <button
-            onClick={() => reader.forward()}
+            onClick={handleForwardClick}
             className="w-16 h-16 rounded-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all duration-300"
             style={{ 
               background: `linear-gradient(135deg, ${colorScheme.background}E6, ${colorScheme.background}99)`,
@@ -633,125 +570,43 @@ function App() {
           </button>
         </div>
 
-        {/* Settings Modal */}
+        {/* Reader Settings Modal - Use new component */}
+        <ReaderSettingsModal
+          isOpen={showReaderSettings}
+          onClose={() => setShowReaderSettings(false)}
+          settings={settings}
+          onUpdateSettings={updateSettings}
+          colorScheme={{
+            background: colorScheme.background,
+            text: colorScheme.text,
+            highlight: colorScheme.highlight || '#FF3B30'
+          }}
+        />
+        
+        {/* Color Schemes Modal */}
         <SettingsModal
           isOpen={showColorSchemes}
           onClose={() => setShowColorSchemes(false)}
-          colorScheme={colorScheme}
+          colorScheme={colorScheme as any}
           onHighlightColorChange={handleHighlightColorChange}
           onFontChange={handleFontChange}
           onColorSchemeChange={handleColorSchemeChange}
         />
         
-        {/* TTS Settings Modal */}
-        <TTSSettings
+        {/* TTS Settings Modal - Use the adapter */}
+        <TTSSettingsAdapter
           isOpen={showTTSSettings}
           onClose={() => setShowTTSSettings(false)}
           reader={reader}
-          colorScheme={colorScheme}
-        />
-        
-        {/* Corner File Upload */}
-        <FileUploadCorner colorScheme={colorScheme} reader={reader} />
-        
-        {/* PDF Manager Modal */}
-        {showPDFManager && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div 
-              className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl 
-                max-w-4xl w-[calc(100vw-2rem)] md:w-full mx-4
-                max-h-[calc(100vh-4rem)] overflow-auto
-                touch-manipulation"
-              onClick={e => e.stopPropagation()}
-              style={{ background: colorScheme.background, color: colorScheme.text }}
-            >
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">PDF Manager</h2>
-                <button 
-                  onClick={() => setShowPDFManager(false)}
-                  className="text-gray-500 hover:text-gray-700
-                    w-11 h-11 flex items-center justify-center
-                    touch-manipulation"
-                >
-                  ✕
-                </button>
-              </div>
-              
-              <PDFManager
-                onSelectPDF={handlePDFSelection}
-                colorScheme={colorScheme}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Translation Tooltip */}
-        <TranslationTooltip
-          word={selectedWord || ''}
-          translation={translation}
-          position={tooltipPosition}
-          colorScheme={colorScheme}
-        />
-
-        {/* Slide Indicator (mobile only) */}
-        {isMobile && !showSavedPDFs && (
-          <SlideIndicator
-            direction="left"
-            colorScheme={colorScheme}
-            onClick={() => setShowSavedPDFs(true)}
-          />
-        )}
-        {/* Stats Slide Indicator (mobile only) */}
-        {isMobile && !showStats && (
-          <SlideIndicator
-            direction="right"
-            colorScheme={colorScheme}
-            onClick={() => setShowStats(true)}
-          />
-        )}
-
-        {/* Saved PDFs Panel */}
-        <SavedPDFsPanel
-          isOpen={showSavedPDFs}
-          onClose={() => setShowSavedPDFs(false)}
-          reader={reader}
-          colorScheme={colorScheme}
-        />
-
-        {/* Fullscreen Reader */}
-        <FullscreenReader
-          isOpen={isFullscreen}
-          onClose={() => setIsFullscreen(false)}
-          currentWords={currentWords}
-          isPlaying={isPlaying}
-          onPlay={() => reader.play()}
-          onPause={() => reader.pause()}
-          onForward={() => reader.forward()}
-          onRewind={() => reader.rewind()}
-          colorScheme={colorScheme}
-          fontSize={fontSize}
-          onWordClick={handleWordClick}
-        />
-
-        {/* Stats Panel */}
-        <StatsPanel
-          isOpen={showStats}
-          onClose={() => setShowStats(false)}
-          stats={stats}
-          colorScheme={colorScheme}
-        />
-
-        {/* Subscription Modal */}
-        <SubscriptionModal
-          isOpen={showSubscription}
-          onClose={() => setShowSubscription(false)}
-          onSubscribe={handleSubscribe}
-          trialDaysLeft={subscriptionInfo.trialDaysLeft}
-          colorScheme={colorScheme}
+          colorScheme={{
+            background: colorScheme.background,
+            text: colorScheme.text,
+            highlight: colorScheme.highlight || '#FF3B30'
+          }}
         />
       </div>
     </div>
   );
 }
 
-export default App;
+export default AppWithReaderProvider;
