@@ -36,11 +36,21 @@ export function MainLayout({
     };
 
     window.addEventListener('resize', handleResize);
+    
+    // Debug output
+    console.log("DEBUG: MainLayout mounted with reader:", reader ? "available" : "not available");
+    if (reader) {
+      console.log("DEBUG: Reader has setText:", typeof reader.setText === 'function' ? "yes" : "no");
+    }
+    
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [reader]);
 
   // If no reader provided, don't show PDF panel toggle
   const shouldShowSidebarToggle = showSidebarToggle && reader;
+  if (!reader && showSidebarToggle) {
+    console.warn("DEBUG: MainLayout has showSidebarToggle=true but no reader!");
+  }
 
   return (
     <div
@@ -58,6 +68,18 @@ export function MainLayout({
           <button
             onClick={() => setShowSavedPDFs(true)}
             className="fixed left-4 top-1/2 -translate-y-1/2 z-40
+              w-10 h-10 rounded-xl flex items-center justify-center
+              hover:bg-current/10 transition-colors"
+          >
+            <IoMenu size={24} />
+          </button>
+        )}
+        
+        {/* Sidebar toggle for desktop */}
+        {shouldShowSidebarToggle && !isMobile && (
+          <button
+            onClick={() => setShowSavedPDFs(true)}
+            className="fixed left-4 top-20 z-40
               w-10 h-10 rounded-xl flex items-center justify-center
               hover:bg-current/10 transition-colors"
           >

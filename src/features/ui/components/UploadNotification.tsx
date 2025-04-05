@@ -1,11 +1,18 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IoCheckmarkCircle, IoCloseCircle, IoAlertCircle } from 'react-icons/io5';
 
-interface UploadNotificationProps {
+/**
+ * Props for UploadNotification component
+ */
+export interface UploadNotificationProps {
+  /** Type of notification */
   type: 'success' | 'error' | 'warning';
+  /** Message to display */
   message: string;
+  /** Callback when the notification is closed */
   onClose: () => void;
+  /** Color scheme for styling */
   colorScheme: {
     background: string;
     text: string;
@@ -13,8 +20,16 @@ interface UploadNotificationProps {
   };
 }
 
-export function UploadNotification({ type, message, onClose, colorScheme }: UploadNotificationProps) {
-  React.useEffect(() => {
+/**
+ * Component displaying a notification for upload events
+ */
+export function UploadNotification({ 
+  type, 
+  message, 
+  onClose, 
+  colorScheme 
+}: UploadNotificationProps) {
+  useEffect(() => {
     const timer = setTimeout(onClose, 5000);
     return () => clearTimeout(timer);
   }, [onClose]);
@@ -85,4 +100,4 @@ export function UploadNotification({ type, message, onClose, colorScheme }: Uplo
       </motion.div>
     </AnimatePresence>
   );
-}
+} 

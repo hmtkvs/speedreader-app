@@ -1,107 +1,87 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
-import { COLOR_SCHEMES, FONT_FAMILIES, ColorScheme } from '../../../models/types';
+import React, { createContext, useContext, useState, ReactNode } from 'react';
+import { COLOR_SCHEMES } from '../../../models/types';
 
-// Define the shape of the ThemeContext
-interface ThemeContextType {
-  colorScheme: ColorScheme;
-  setColorScheme: (scheme: ColorScheme) => void;
-  toggleDarkMode: () => void;
-  setHighlightColor: (color: string) => void;
-  setFontFamily: (fontFamily: string) => void;
-  availableColorSchemes: ColorScheme[];
-  availableFontFamilies: typeof FONT_FAMILIES;
-}
-
-// Create the context with a default undefined value
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
-
-// ThemeProvider props interface
-interface ThemeProviderProps {
-  children: ReactNode;
-  initialColorScheme?: ColorScheme;
+/**
+ * Type for theme color scheme
+ */
+interface ColorScheme {
+  background: string;
+  text: string;
+  highlight: string;  // Making this required simplifies things
+  font?: string;
 }
 
 /**
- * ThemeProvider component that manages color scheme settings
+ * Theme context type
+ */
+interface ThemeContextType {
+  colorScheme: ColorScheme;
+  setColorScheme: (scheme: Partial<ColorScheme>) => void;
+}
+
+/**
+ * Context for theme settings
+ */
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+/**
+ * Props for ThemeProvider component
+ */
+interface ThemeProviderProps {
+  children: ReactNode;
+  initialColorScheme?: Partial<ColorScheme>;
+}
+
+/**
+ * Provider component for theme context
  */
 export function ThemeProvider({ 
-  children, 
-  initialColorScheme = {
-    ...COLOR_SCHEMES[0],
-    highlight: COLOR_SCHEMES[0].highlight || '#FF3B30'  // Ensure highlight is always defined
-  }
+  children,
+  initialColorScheme
 }: ThemeProviderProps) {
-  // State for the current color scheme
-  const [colorScheme, setColorSchemeState] = useState<ColorScheme>(initialColorScheme);
-
-  // Function to update the color scheme
-  const setColorScheme = useCallback((scheme: ColorScheme) => {
-    const updatedScheme = {
-      ...scheme,
-      highlight: scheme.highlight || colorScheme.highlight || '#FF3B30'
-    };
-    setColorSchemeState(updatedScheme);
-    
-    // Store in localStorage for persistence
-    localStorage.setItem('colorScheme', JSON.stringify(updatedScheme));
-  }, [colorScheme.highlight]);
-
-  // Function to toggle between light and dark mode
-  const toggleDarkMode = useCallback(() => {
-    const isDark = colorScheme.background === COLOR_SCHEMES[0].background;
-    const newScheme = isDark ? COLOR_SCHEMES[1] : COLOR_SCHEMES[0];
-    
-    setColorScheme({
-      ...newScheme,
-      highlight: colorScheme.highlight,
-      font: colorScheme.font
-    });
-  }, [colorScheme, setColorScheme]);
-
-  // Function to update the highlight color
-  const setHighlightColor = useCallback((color: string) => {
-    setColorScheme({
-      ...colorScheme,
-      highlight: color
-    });
-  }, [colorScheme, setColorScheme]);
-
-  // Function to update the font family
-  const setFontFamily = useCallback((fontFamily: string) => {
-    setColorScheme({
-      ...colorScheme,
-      font: fontFamily
-    });
-  }, [colorScheme, setColorScheme]);
-
-  // Create the context value
-  const contextValue: ThemeContextType = {
-    colorScheme,
-    setColorScheme,
-    toggleDarkMode,
-    setHighlightColor,
-    setFontFamily,
-    availableColorSchemes: COLOR_SCHEMES,
-    availableFontFamilies: FONT_FAMILIES
+  // Use the first color scheme as default, ensuring highlight is defined
+  const defaultScheme: ColorScheme = {
+    ...COLOR_SCHEMES[0],
+    highlight: COLOR_SCHEMES[0].highlight || '#FF3B30',
+    ...(initialColorScheme || {})
   };
-
+  
+  const [colorScheme, setColorSchemeState] = useState<ColorScheme>(defaultScheme);
+  
+  // Wrapper function to handle partial updates
+  const setColorScheme = (scheme: Partial<ColorScheme>) => {
+    setColorSchemeState(current => ({
+      ...current,
+      ...scheme
+    }));
+  };
+  
   return (
-    <ThemeContext.Provider value={contextValue}>
+    <ThemeContext.Provider value={{ colorScheme, setColorScheme }}>
       {children}
     </ThemeContext.Provider>
   );
 }
 
 /**
- * Hook to use the theme context
+ * Hook to access the theme context
+ * 
+ * @returns Theme context value
+ * @throws Error if used outside of a ThemeProvider
  */
-export function useTheme() {
+export function useTheme(): ThemeContextType {
   const context = useContext(ThemeContext);
+  
   if (context === undefined) {
-    throw new Error('useTheme must be used within a ThemeProvider');
+    // Fallback to default theme if no context is available
+    return {
+      colorScheme: {
+        ...COLOR_SCHEMES[0],
+        highlight: COLOR_SCHEMES[0].highlight || '#FF3B30'
+      },
+      setColorScheme: () => {}
+    };
   }
+  
   return context;
-}
-
-// Export color schemes and font families for use outside the context
-export { COLOR_SCHEMES, FONT_FAMILIES }; 
+} 

@@ -13,6 +13,9 @@ interface AppRouterProps {
  * AppRouter component that handles navigation between different pages/features
  */
 export function AppRouter({ reader }: AppRouterProps) {
+  console.log("DEBUG: AppRouter rendered with reader:", reader ? "available" : "not available");
+  console.log("DEBUG: Reader has setText:", reader && typeof reader.setText === 'function' ? "yes" : "no");
+  
   return (
     <BrowserRouter>
       <MainLayout reader={reader as SimplifiedReaderModel}>

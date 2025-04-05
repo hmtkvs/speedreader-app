@@ -1,1 +1,5 @@
-export { ThemeProvider, useTheme, COLOR_SCHEMES, FONT_FAMILIES } from './contexts/ThemeContext'; 
+/**
+ * Theme Feature - Contains theme management functionality
+ */
+
+export { ThemeProvider, useTheme } from './contexts/ThemeContext'; 

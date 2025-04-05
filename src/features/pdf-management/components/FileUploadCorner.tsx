@@ -1,23 +1,51 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { IoDocumentText, IoAlertCircle } from 'react-icons/io5';
-import { UploadNotification } from './UploadNotification';
-import { ReaderModel } from '../models/reader';
-import { FileRecord } from '../types/common';
-import { parsePDF } from '../utils/pdfParser';
-import { Platform } from '../utils/platform';
+import { IoDocumentText } from 'react-icons/io5';
+import { UploadNotification } from '../../ui';
+import { PDFParserService } from '../services/PDFParserService';
+import { Platform } from '../../../utils/platform';
+import { FileRecord } from '../../../types/common';
+import { useReaderContext } from '../../reader/contexts/ReaderContext';
+import { PDFStorageService } from '../services/pdfStorageService';
 
 interface FileUploadCornerProps {
   colorScheme: {
     background: string;
     text: string;
     highlight: string;
-  },
-  reader: ReaderModel;
+  }
+  directSetText?: (text: string) => void; // Optional direct text setting function
 }
 
-export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps) {
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+/**
+ * Component for uploading files from the corner of the screen
+ */
+export function FileUploadCorner({ colorScheme, directSetText }: FileUploadCornerProps) {
+  // Get reader context
+  const { setText } = useReaderContext();
+  
+  // Function to set text content that uses directSetText if available
+  const setTextContent = useCallback((content: string) => {
+    console.log("DEBUG: FileUploadCorner setTextContent called, text length:", content.length);
+    console.warn("SETTING TEXT FROM FILE UPLOAD CORNER", content.substring(0, 100) + "...");
+    
+    if (directSetText) {
+      console.log("DEBUG: Using directSetText function");
+      directSetText(content);
+    } else if (setText) {
+      console.log("DEBUG: Using context setText function");
+      setText(content);
+    } else {
+      console.error("DEBUG: No text setting function available!");
+    }
+  }, [setText, directSetText]);
+  
+  // Get services
+  const pdfParser = PDFParserService.getInstance();
+  const pdfStorage = PDFStorageService.getInstance();
+  
+  // Local state
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [notification, setNotification] = useState<{
@@ -56,6 +84,7 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
       });
       return false;
     }
+    
     if (file.size > 10 * 1024 * 1024) {
       console.error('File too large');
       setNotification({
@@ -64,6 +93,7 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
       });
       return false;
     }
+    
     return true;
   };
 
@@ -113,7 +143,8 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
         
         try {
           // Process the PDF file
-          text = await parsePDF(file);
+          const parseResult = await pdfParser.parsePDF(file);
+          text = parseResult.text;
           
           // Validate the extracted text
           if (!text || text.trim().length < 20) {
@@ -121,6 +152,18 @@ export function FileUploadCorner({ colorScheme, reader }: FileUploadCornerProps)
           }
           
           setUploadProgress(90);
+          
+          // Store in PDF storage
+          const userId = "current-user"; // In a real app, this would come from auth
+          let uploadResult;
+          
+          try {
+            // First create a new record with the extracted text
+            uploadResult = await pdfStorage.uploadPDF(file, text);
+          } catch (storageError) {
+            console.error('PDF storage failed:', storageError);
+            // Continue even if storage fails, we still want to show the text
+          }
         } catch (pdfError) {
           console.error('PDF parsing failed:', pdfError);
           
@@ -160,43 +203,11 @@ Please try a different PDF file or convert this document to a more compatible fo
 
       setUploadProgress(95);
       
-      // Add the text to the reader
-      let bookId;
-      try {
-        bookId = await reader.addBook(text, file.name);
-      } catch (addError) {
-        console.error('Error adding book:', addError);
-        throw new Error('Failed to process the file for reading');
-      }
-      
+      // Set the content in the reader
+      console.log("Setting text in reader from FileUploadCorner", text ? text.substring(0, 100) + "..." : "No text");
+      console.warn("ABOUT TO SET TEXT WITH LENGTH:", text?.length || 0);
+      setTextContent(text);
       setUploadProgress(100);
-      
-      if (bookId) {
-        try {
-          await reader.loadBook(bookId);
-        } catch (loadError) {
-          console.error('Error loading book:', loadError);
-          // We still consider this a success since the upload worked,
-          // but we'll note the loading issue
-          setNotification({
-            type: 'warning',
-            message: `Uploaded ${file.name}, but couldn't open it automatically`
-          });
-          setRecentFiles(prev => [{
-            name: file.name,
-            timestamp: new Date(),
-            status: 'success',
-            type: file.type,
-            size: file.size
-          }, ...prev.slice(0, 4)]);
-          
-          clearInput();
-          setCurrentFile(null);
-          setUploadProgress(null);
-          setIsProcessing(false);
-          return;
-        }
-      }
       
       setNotification({
         type: 'success',
@@ -332,4 +343,4 @@ Please try a different PDF file or convert this document to a more compatible fo
       )}
     </motion.div>
   );
-}
+} 

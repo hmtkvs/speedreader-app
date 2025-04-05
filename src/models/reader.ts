@@ -110,6 +110,13 @@ export class ReaderModel {
   }
 
   get currentWords(): HighlightedWord[] {
+    console.log("DEBUG: Core ReaderModel.currentWords getter called, length:", this._currentWords.length);
+    
+    // Ensure we always return at least an empty word if the array is empty
+    if (this._currentWords.length === 0) {
+      return [{ before: '', highlight: '', after: '' }];
+    }
+    
     return this._currentWords;
   }
 
@@ -224,11 +231,43 @@ export class ReaderModel {
   }
 
   setText(text: string) {
+    console.log("DEBUG: ReaderModel.setText called with text length:", text?.length || 0);
+    
+    // Trigger a more visible debug output to browser console
+    console.warn("TEXT SET IN READER MODEL", text?.substring(0, 100) + "...");
+    
+    // Check for empty text
+    if (!text || text.trim() === '') {
+      console.error("ERROR: Attempted to set empty text in ReaderModel");
+      return;
+    }
+    
     this._text = text;
     this._words = text.split(/\s+/).filter(word => word.length > 0);
     this._currentIndex = 0;
+    
+    console.log(`DEBUG: ReaderModel has processed text. Word count: ${this._words.length}`);
+    
     this.updateTimeRemaining();
     this.showCurrentWords();
+    
+    // Force an update of the highlighted words
+    this._currentWords = this._words.slice(0, this._wordsAtTime).map(word => this.highlightWord(word));
+    
+    // Explicitly notify all listeners
+    this.emit('propertyChange');
+    
+    // Signal other components that text was updated
+    this.emit('textUpdated');
+    
+    // Also dispatch a DOM event for components that don't have direct access to the model
+    try {
+      document.dispatchEvent(new CustomEvent('reader-model-text-updated', { 
+        detail: { length: text.length, wordCount: this._words.length } 
+      }));
+    } catch (err) {
+      console.error("Error dispatching text update event:", err);
+    }
   }
 
   private getWordDuration(words: string[]): number {
@@ -403,5 +442,69 @@ export class ReaderModel {
       this.tts.stop();
       this.startTTS();
     }
+  }
+
+  onWordsChange(callback: (words: HighlightedWord[]) => void) {
+    // First call the callback with the current words immediately
+    setTimeout(() => {
+      console.log("DEBUG: Core ReaderModel immediately calling words callback with", this._currentWords.length, "words");
+      callback(this._currentWords.length > 0 ? this._currentWords : [{ before: '', highlight: '', after: '' }]);
+    }, 0);
+    
+    // Then set up the listener for future changes
+    this.on('propertyChange', () => {
+      console.log("DEBUG: Core ReaderModel propertyChange event, calling callback with", this._currentWords.length, "words");
+      callback(this._currentWords.length > 0 ? this._currentWords : [{ before: '', highlight: '', after: '' }]);
+    });
+    
+    // Also listen specifically for text updates
+    this.on('textUpdated', () => {
+      console.log("DEBUG: Core ReaderModel textUpdated event, calling callback with", this._currentWords.length, "words");
+      callback(this._currentWords.length > 0 ? this._currentWords : [{ before: '', highlight: '', after: '' }]);
+    });
+  }
+  
+  onPlayingStateChange(callback: (isPlaying: boolean) => void) {
+    this.on('propertyChange', () => {
+      callback(this._isPlaying);
+    });
+  }
+  
+  onTextUpdate(callback: () => void) {
+    this.on('textUpdated', callback);
+  }
+  
+  getState() {
+    return {
+      currentIndex: this._currentIndex,
+      isPlaying: this._isPlaying,
+      progress: this._progress
+    };
+  }
+  
+  getProgress() {
+    return this._progress;
+  }
+  
+  getSettings() {
+    return {
+      wpm: this._wpm,
+      fontSize: this._fontSize,
+      colorScheme: this._colorScheme,
+      ttsEnabled: this._useTTS,
+      ttsVoice: this._ttsOptions.voice
+    };
+  }
+  
+  setPosition(index: number) {
+    this._currentIndex = Math.max(0, Math.min(this._words.length - 1, index));
+    this.showCurrentWords();
+  }
+  
+  cleanup() {
+    if (this._timer) {
+      window.clearTimeout(this._timer);
+    }
+    this._eventListeners = {};
   }
 }
