@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IoClose, IoVolumeHigh, IoSpeedometer, IoLanguage, IoCheckmarkCircle, IoPlay } from 'react-icons/io5';
 import { ReaderModel } from '../models/reader';
-import { TextToSpeech } from '../utils/tts';
+import { TTSService } from '../features/reader/services/TTSService';
 
 interface TTSSettingsProps {
   isOpen: boolean;
@@ -19,7 +19,7 @@ export function TTSSettings({ isOpen, onClose, reader, colorScheme }: TTSSetting
   const modalRef = useRef<HTMLDivElement>(null);
   const [selectedVoice, setSelectedVoice] = useState('af_bella');
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
-  const tts = TextToSpeech.getInstance();
+  const tts = TTSService.getInstance();
   const voices = tts.getAvailableVoices();
   
   // Handle ESC key press

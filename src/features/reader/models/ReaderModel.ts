@@ -16,6 +16,9 @@ export interface ReaderSettings {
   ttsVoice: string;
 }
 
+/**
+ * Structure for a word with highlighted portion
+ */
 export interface ReadingWord {
   before: string;
   highlight: string;
@@ -53,13 +56,38 @@ export class ReaderModel {
    * Set the text to be read
    */
   setText(text: string): void {
+    if (!text || text.trim() === '') {
+      console.error("ERROR: Attempted to set empty text in ReaderModel");
+      this.text = '';
+      this.words = [];
+      this.currentIndex = 0;
+      this.notifyWordChange();
+      return;
+    }
+    
     this.text = text;
-    this.words = text
-      .split(/\s+/)
-      .filter(word => word.trim() !== '');
+    
+    // Split text into words and filter out empty strings
+    this.words = text.split(/\s+/).filter(word => word.trim().length > 0);
+    
+    // Reset position
     this.currentIndex = 0;
     this.isPlaying = false;
+    
+    // Notify listeners that words have changed
     this.notifyWordChange();
+    
+    // Also emit a DOM event for components that might be listening
+    try {
+      document.dispatchEvent(new CustomEvent('reader-words-changed', {
+        detail: {
+          wordCount: this.words.length,
+          sample: this.words.slice(0, 5).join(' ')
+        }
+      }));
+    } catch (err) {
+      console.error("Error emitting DOM event:", err);
+    }
   }
 
   /**
@@ -219,36 +247,46 @@ export class ReaderModel {
         const word = this.words[index];
         const highlightPos = this.getOptimalReadingPosition(word);
         
+        // Split the word into before, highlight, and after segments
         result.push({
           before: word.substring(0, highlightPos),
-          highlight: word.substring(highlightPos, highlightPos + 1),
+          highlight: word.charAt(highlightPos) || '',
           after: word.substring(highlightPos + 1)
         });
       }
     }
     
-    return result;
+    return result.length > 0 ? result : [{ before: '', highlight: '', after: '' }];
   }
 
   /**
-   * Determine the optimal character to highlight for reading
+   * Get the optimal reading position for highlighting a character in a word
+   * Based on research about optimal recognition point (ORP)
    */
   private getOptimalReadingPosition(word: string): number {
-    // Simple algorithm:
-    // - For words of 1-4 characters: highlight first character
-    // - For words of 5-9 characters: highlight second character
-    // - For words of 10+ characters: highlight third character
-    if (word.length <= 4) return 0;
-    if (word.length <= 9) return 1;
-    return 2;
+    // Ensure we handle edge cases
+    if (!word || word.length === 0) {
+      return 0;
+    }
+    
+    // For short words, highlight near the beginning
+    if (word.length <= 3) return 0;
+    if (word.length <= 5) return 1;
+    
+    // For medium words, highlight near 1/3 of the way in
+    if (word.length <= 9) return Math.floor(word.length / 3);
+    
+    // For long words, highlight around 1/4 of the way in
+    return Math.floor(word.length / 4);
   }
 
   /**
-   * Notify subscribers about word changes
+   * Notify listeners that the current word has changed
    */
   private notifyWordChange(): void {
     if (this.onWordChange) {
-      this.onWordChange(this.getCurrentWords());
+      const words = this.getCurrentWords();
+      this.onWordChange(words);
     }
   }
 

@@ -1,7 +1,7 @@
 import { EventCallback, ColorScheme, COLOR_SCHEMES, FONT_FAMILIES } from './types';
 import { StatisticsService } from '../utils/statistics';
 import { BookStorage } from '../utils/storage';
-import { TextToSpeech } from '../utils/tts';
+import { TTSService } from '../features/reader/services/TTSService';
 
 interface HighlightedWord {
   before: string;
@@ -30,7 +30,7 @@ export class ReaderModel {
   private storage: BookStorage;
   private statistics: StatisticsService;
   private _useTTS: boolean = false;
-  private tts: TextToSpeech;
+  private tts: TTSService;
   private _ttsOptions = {
     voice: 'af_bella',
     format: 'mp3',
@@ -40,7 +40,7 @@ export class ReaderModel {
   constructor() {
     this.storage = new BookStorage();
     this.statistics = StatisticsService.getInstance();
-    this.tts = TextToSpeech.getInstance();
+    this.tts = TTSService.getInstance();
     this.tts.setHighlightCallback(this.handleTTSHighlight.bind(this));
     this.tts.setCompletionCallback(this.handleTTSComplete.bind(this));
   }

@@ -24,7 +24,7 @@ interface ReaderPageProps {
  */
 export function ReaderPage({ onPDFUploadClick }: ReaderPageProps) {
   // Get theme and reader from context
-  const { colorScheme, setHighlightColor, setFontFamily, setColorScheme } = useTheme();
+  const { colorScheme } = useTheme();
   const { 
     currentWords, 
     isPlaying, 
@@ -63,9 +63,44 @@ export function ReaderPage({ onPDFUploadClick }: ReaderPageProps) {
 
   // Set sample text when the app loads (if needed)
   useEffect(() => {
-    if (currentWords.length === 0) {
+    // Listen for text updates from other components
+    const handleTextUpdated = () => {
+    };
+    
+    // Listen for PDF selection events
+    const handlePdfSelected = (event: CustomEvent) => {
+    };
+    
+    // Listen for direct PDF content
+    const handleDirectPdfContent = (event: CustomEvent) => {
+    };
+    
+    // Listen for PDF content selected from saved PDFs
+    const handlePdfContentSelected = (event: CustomEvent) => {
+      // If event contains text, set it in the reader
+      if (event.detail?.text) {
+        setText(event.detail.text);
+        
+        // Force UI update
+        setSelectedWord(null);
+      }
+    };
+    
+    document.addEventListener('reader-text-updated', handleTextUpdated);
+    document.addEventListener('pdf-text-selected', handlePdfSelected as EventListener);
+    document.addEventListener('pdf-direct-content', handleDirectPdfContent as EventListener);
+    document.addEventListener('pdf-content-selected', handlePdfContentSelected as EventListener);
+    
+    if (currentWords.length <= 1 && !currentWords[0].before && !currentWords[0].highlight && !currentWords[0].after) {
       // Sample text to demonstrate the reader functionality
       setText("Welcome to the Speed Reader application. This is a sample text to demonstrate how the reader works. You can upload your own PDFs or paste text from clipboard. Click any word to see its translation. Use the controls at the bottom to adjust reading speed and settings.");
+    }
+    
+    return () => {
+      document.removeEventListener('reader-text-updated', handleTextUpdated);
+      document.removeEventListener('pdf-text-selected', handlePdfSelected as EventListener);
+      document.removeEventListener('pdf-direct-content', handleDirectPdfContent as EventListener);
+      document.removeEventListener('pdf-content-selected', handlePdfContentSelected as EventListener);
     }
   }, [setText, currentWords.length]);
 
@@ -132,17 +167,29 @@ export function ReaderPage({ onPDFUploadClick }: ReaderPageProps) {
 
   // Update highlight color
   const handleHighlightColorChange = (color: string) => {
-    setHighlightColor(color);
+    // Use type assertion to access the setHighlightColor method
+    const themeContext = useTheme() as any;
+    if (themeContext.setHighlightColor) {
+      themeContext.setHighlightColor(color);
+    }
   };
 
   // Update font
   const handleFontChange = (fontFamily: string) => {
-    setFontFamily(fontFamily);
+    // Use type assertion to access the setFontFamily method
+    const themeContext = useTheme() as any;
+    if (themeContext.setFontFamily) {
+      themeContext.setFontFamily(fontFamily);
+    }
   };
 
   // Update color scheme
   const handleColorSchemeChange = (scheme: any) => {
-    setColorScheme(scheme);
+    // Use type assertion to access the setColorScheme method
+    const themeContext = useTheme() as any;
+    if (themeContext.setColorScheme) {
+      themeContext.setColorScheme(scheme);
+    }
   };
 
   return (

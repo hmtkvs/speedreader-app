@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ReaderProvider, ReaderPage, useReader } from './features/reader';
+import { ReaderProvider, useReader } from './features/reader';
 import { ThemeProvider, useTheme } from './features/theme';
-import { MainLayout } from './features/layout';
-import { FileUploadCorner } from './components/FileUploadCorner';
+import { AppRouter } from './features/app/router/AppRouter';
+import { FileUploadCorner } from './features/pdf-management/components/FileUploadCorner';
 import { PDFManagerAdapter } from './features/pdf-management';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { SubscriptionService } from './utils/subscription';
-import { SimplifiedReaderModel } from './types/simplified';
 import { ReaderModel } from './models/reader';
 
 /**
@@ -28,7 +27,7 @@ const AppWithProviders = () => {
 function AppContent() {
   // Get contexts
   const { colorScheme } = useTheme();
-  const { setText } = useReader();
+  const { setText, currentWords } = useReader();
   
   // State for PDF manager and subscription modal
   const [showPDFManager, setShowPDFManager] = useState(false);
@@ -39,17 +38,101 @@ function AppContent() {
     subscriptionDaysLeft: null as number | null 
   });
   
-  // Create the reader model (will be passed to MainLayout)
+  // Create the reader model (will be passed to AppRouter)
   const [reader] = useState<ReaderModel>({
-    addBook: async (text: string, name: string) => Promise.resolve(name),
-    loadBook: async (id: string) => Promise.resolve(true),
-    rewind: () => {},
-    forward: () => {},
-    setText: (text: string) => setText(text),
-    play: () => {},
-    pause: () => {},
-    setTTSVoice: (voiceId: string) => {},
+    addBook: async (text: string, name: string) => {
+      setText(text); // Ensure text is set in the reader context
+      return Promise.resolve(name);
+    },
+    loadBook: async (id: string) => {
+      return Promise.resolve(true);
+    },
+    rewind: () => {
+      // Method implementation
+    },
+    forward: () => {
+      // Method implementation
+    },
+    setText: (text: string) => {
+      // Update debug state
+      setTextState({
+        hasText: text.length > 0,
+        textLength: text.length,
+        lastUpdate: Date.now()
+      });
+      
+      // Set text directly using the useReader hook's setText
+      setText(text);
+      
+      // Emit an event to notify other components
+      document.dispatchEvent(new CustomEvent('reader-text-updated', { 
+        detail: { 
+          length: text.length, 
+          preview: text.substring(0, 100) + "..."
+        } 
+      }));
+    },
+    play: () => {
+      // Method implementation
+    },
+    pause: () => {
+      // Method implementation
+    },
+    setTTSVoice: (voiceId: string) => {
+      // Method implementation
+    },
   } as unknown as ReaderModel);
+  
+  // Debug state to track text propagation
+  const [textState, setTextState] = useState({
+    hasText: false,
+    textLength: 0,
+    lastUpdate: Date.now()
+  });
+  
+  // Event listeners for text updates
+  useEffect(() => {
+    const handleTextUpdate = (e: CustomEvent) => {
+      // Handle text update event
+    };
+    
+    const handlePdfDirectContent = (e: CustomEvent) => {
+      if (e.detail?.text) {
+        // Add a slight delay to allow component state to update
+        setTimeout(() => {
+          setText(e.detail.text);
+          
+          // Also send it to the reader model directly
+          if (reader && reader.setText) {
+            reader.setText(e.detail.text);
+          }
+        }, 100);
+      }
+    };
+    
+    // Listen for PDF content selected from the saved PDFs panel
+    const handlePdfContentSelected = (e: CustomEvent) => {
+      if (e.detail?.text) {
+        // Update with the PDF content
+        setText(e.detail.text);
+        
+        // Also update the reader model directly for good measure
+        if (reader && reader.setText) {
+          reader.setText(e.detail.text);
+        }
+      }
+    };
+    
+    document.addEventListener('reader-text-updated', handleTextUpdate as EventListener);
+    document.addEventListener('pdf-direct-content', handlePdfDirectContent as EventListener);
+    document.addEventListener('pdf-content-selected', handlePdfContentSelected as EventListener);
+    
+    return () => {
+      document.removeEventListener('reader-text-updated', handleTextUpdate as EventListener);
+      document.removeEventListener('pdf-direct-content', handlePdfDirectContent as EventListener);
+      document.removeEventListener('pdf-content-selected', handlePdfContentSelected as EventListener);
+    };
+  }, [setText]);
   
   // Check subscription status
   useEffect(() => {
@@ -90,19 +173,25 @@ function AppContent() {
   };
 
   return (
-    <MainLayout reader={reader as SimplifiedReaderModel}>
+    <>
+      {/* Use AppRouter for routing */}
+      <AppRouter reader={reader} />
+      
+      {/* Floating components that exist outside the router */}
+      
       {/* PDF Upload Button */}
       <FileUploadCorner
-        reader={reader}
         colorScheme={{
           background: colorScheme.background,
           text: colorScheme.text,
           highlight: colorScheme.highlight || '#FF3B30'
         }}
+        directSetText={(text) => {
+          console.log("DEBUG: Direct setText from FileUploadCorner, length:", text.length);
+          console.warn("⚡ DIRECT SET TEXT CALLED FROM APP, length:", text.length);
+          reader.setText(text);
+        }}
       />
-
-      {/* Core application page */}
-      <ReaderPage />
       
       {/* PDF Manager */}
       {showPDFManager && (
@@ -128,7 +217,7 @@ function AppContent() {
         }}
         trialDaysLeft={subscriptionInfo.trialDaysLeft}
       />
-    </MainLayout>
+    </>
   );
 }
 

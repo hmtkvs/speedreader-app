@@ -41,17 +41,46 @@ export function useReader(options: UseReaderOptions = {}): UseReaderResult {
   
   // Initialize reader model with callbacks
   useEffect(() => {
+    // Set up callback for word changes
     readerModel.onWordsChange((words) => {
-      setCurrentWords(words);
-      setProgress(readerModel.getProgress());
+      if (words.length > 0) {
+        setCurrentWords(words);
+        setProgress(readerModel.getProgress());
+      } else {
+        console.error("Received empty words array from model");
+      }
     });
     
+    // Set up callback for playing state changes
     readerModel.onPlayingStateChange((playing) => {
       setIsPlaying(playing);
     });
     
+    // Listen for global text update events (for cross-component updates)
+    const handleTextUpdated = (event: CustomEvent) => {
+      // Event handler kept for functionality
+    };
+    
+    // Listen for word change events from Reader models
+    const handleWordsChanged = (event: CustomEvent) => {
+      if (event.detail && event.detail.wordCount > 0) {
+        // Force a refresh of the model to get updated words
+        setProgress(readerModel.getProgress());
+      }
+    };
+    
+    document.addEventListener('reader-text-updated', handleTextUpdated as EventListener);
+    document.addEventListener('reader-words-changed', handleWordsChanged as EventListener);
+    
+    // Force an update after mounting to ensure we have the latest state
+    setTimeout(() => {
+      setProgress(readerModel.getProgress());
+    }, 100);
+    
     return () => {
       readerModel.cleanup();
+      document.removeEventListener('reader-text-updated', handleTextUpdated as EventListener);
+      document.removeEventListener('reader-words-changed', handleWordsChanged as EventListener);
     };
   }, [readerModel]);
   
@@ -74,8 +103,29 @@ export function useReader(options: UseReaderOptions = {}): UseReaderResult {
   
   // Set text in the reader
   const handleSetText = useCallback((newText: string) => {
+    if (!newText || newText.trim() === '') {
+      console.error("ERROR: Attempted to set empty text in useReader");
+      return;
+    }
+    
+    // Update local state first
     setText(newText);
-    readerModel.setText(newText);
+    
+    // Then update model - this will trigger callbacks through the ReaderModel's onWordsChange
+    try {
+      readerModel.setText(newText);
+    } catch (err) {
+      console.error("ERROR setting text in reader model:", err);
+    }
+    
+    // Force an update of the UI through a custom event
+    document.dispatchEvent(new CustomEvent('reader-text-updated', { 
+      detail: { 
+        length: newText?.length || 0,
+        source: 'useReader.handleSetText',
+        preview: newText.substring(0, 100) + "..."
+      } 
+    }));
   }, [readerModel]);
   
   // Play/Resume reading
@@ -136,6 +186,18 @@ export function useReader(options: UseReaderOptions = {}): UseReaderResult {
       setIsTTSEnabled(true);
     }
   }, [isTTSEnabled, ttsService]);
+  
+  // Update currentWords when text changes
+  useEffect(() => {
+    if (text && text.trim() !== '') {
+      // This will trigger the onWordsChange callback which updates currentWords
+      try {
+        readerModel.setText(text);
+      } catch (err) {
+        console.error("ERROR updating model text:", err);
+      }
+    }
+  }, [text, readerModel]);
   
   return {
     currentWords,
